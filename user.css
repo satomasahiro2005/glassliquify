@@ -2884,3 +2884,22 @@ main section .search-searchCategory-categoryGrid {
 .qC4GlxGtxeTM1gGsftbJ {
   border-radius: 10px;
 }
+
+.dxmO4YFbWJWft8k1u1xd {
+  background-color: transparent;
+  border-radius: 20px;
+}
+
+.j9ZOu8otCKDEdTV94xmv {
+  border-radius: 13px;
+  box-shadow: var(--glass-shadow);
+}
+
+.ez6VSvyLd4r5M9qTylcA {
+  background-color: transparent;
+  border-radius: 20px;
+  color: white;
+  --glass-filter: url(#glass-filter--r1-7);
+  backdrop-filter: var(--glass-filter) blur(2px);
+  box-shadow: var(--glass-shadow);
+}
