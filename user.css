@@ -617,12 +617,12 @@ img.main-image-image.main-trackList-rowImage.main-image-loaded {
   border-radius: 20px;
   margin-top: 20px;
   margin-bottom: 20px;
-  transition: box-shadow 0.3s ease, transform 0.3s ease;
+  transition: transform 0.3s ease;
+  box-shadow: var(--glass-shadow);
 }
 
 .L7sNjiJDD8O4xxgMC_Uw:hover,
 .CmdG6rptgpq5PPNEDbu5:hover {
-  box-shadow: var(--glass-shadow);
   transform: translateY(-3px);
 }
 
@@ -2902,5 +2902,4 @@ main section .search-searchCategory-categoryGrid {
   --glass-filter: url(#glass-filter--r1-7);
   backdrop-filter: var(--glass-filter) blur(2px);
   box-shadow: var(--glass-shadow);
-
 }
