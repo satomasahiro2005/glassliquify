@@ -1696,7 +1696,8 @@ span.e-91000-baseline.e-91000-overflow-wrap-anywhere.e-91000-button-primary__inn
 
 .UYa1Biqvt3rEVXNnYv10 {
   border-radius: 15px !important;
-  border-color: white !important;
+  border: none !important;
+  box-shadow: var(--glass-shadow);
 }
 
 .Zh1AxZ9mZXkGv7K21x_w {
@@ -2309,6 +2310,7 @@ div#lyrics-background-root {
 .TqWNyOKcLVwGf3ACip7L,
 .VeD7NAcigQaaIUn8jrkN {
   border-radius: 10px;
+  box-shadow: var(--glass-shadow);
 }
 
 #spicetify-update pre {
@@ -2902,4 +2904,25 @@ main section .search-searchCategory-categoryGrid {
   --glass-filter: url(#glass-filter--r1-7);
   backdrop-filter: var(--glass-filter) blur(2px);
   box-shadow: var(--glass-shadow);
+}
+
+.bupRDM6tHHYnfPxEfQ_h {
+  background-color: transparent;
+}
+
+.IgkFBAgYtcmoHcyhUkHg:focus {
+  background-color: transparent;
+}
+
+.main-contextMenu-menu {
+  box-shadow: none;
+}
+
+.YrVXiSMvnPFGqwDCePCf[aria-checked=true] {
+  box-shadow: var(--glass-shadow);
+}
+
+.q5yNYsAl_GMkOgQnquWI:before,
+.YrVXiSMvnPFGqwDCePCf[aria-checked=true] {
+  border-radius: 13px;
 }
