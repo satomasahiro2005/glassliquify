@@ -131,8 +131,13 @@
 }
 
 @keyframes liquify-spin-normal {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .main-actionBarBackground-background {
@@ -1146,10 +1151,10 @@ img.marketplace-customCSS-image-preview {
 .iyhPyoc2dxd1Eno74TCO {
   border-radius: 20px !important;
   transition: box-shadow 0.3s ease, transform 0.3s ease;
+  box-shadow: var(--glass-shadow);
 }
 
 .iyhPyoc2dxd1Eno74TCO:hover {
-  box-shadow: var(--glass-shadow);
   border-radius: 20px !important;
   transform: scale(1.01);
 }
@@ -2980,4 +2985,10 @@ main section .search-searchCategory-categoryGrid {
 .q5yNYsAl_GMkOgQnquWI:before,
 .YrVXiSMvnPFGqwDCePCf[aria-checked=true] {
   border-radius: 13px;
+}
+
+.hRBkptqqbiCPtxhJEbl5 {
+  background-color: transparent;
+  border-radius: 20px;
+  box-shadow: var(--glass-shadow);
 }
