@@ -1089,6 +1089,7 @@ img.marketplace-customCSS-image-preview {
 .main-trackCreditsModal-container {
   background-color: transparent !important;
   border-radius: 20px !important;
+  box-shadow: var(--glass-shadow);
 }
 
 .button-module__button___hf2qg_marketplace {
@@ -1968,7 +1969,7 @@ span.VrI8jP8wkOIpseiHkdBl {
 }
 
 #SpicyLyricsPage .ContentBox .NowBar .Header .MediaBox .MediaImage {
-  border-radius: 40px !important;
+  border-radius: 30px !important;
   box-shadow: var(--glass-shadow);
 }
 
