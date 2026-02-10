@@ -610,6 +610,7 @@ img.main-image-image.main-trackList-rowImage.main-image-loaded {
   background: transparent;
   --glass-filter: url(#glass-filter--r1-7);
   backdrop-filter: var(--glass-filter) blur(2px);
+  box-shadow: var(--glass-shadow);
 }
 
 .RYj2TsFMZc9iODFDkZ8G {
@@ -2990,5 +2991,54 @@ main section .search-searchCategory-categoryGrid {
 .hRBkptqqbiCPtxhJEbl5 {
   background-color: transparent;
   border-radius: 20px;
+  box-shadow: var(--glass-shadow);
+}
+
+.sue5UWY_USOrJJ8zsEqd {
+  box-shadow: var(--glass-shadow);
+}
+
+.aI_lxL3IvaCoKx6feAnM .heg1uhDZJjhy_O9ppkQ2 {
+  box-shadow: var(--glass-shadow);
+}
+
+.pgG0twAwfs4OTLfz6uqF,
+.fK0KnZTtzPfi3NLf7HqI,
+.rPkgrsg6J8lFGUOX2aNQ,
+.rFFBhxaicu21eInVkDCF,
+.view-homeShortcutsGrid-shortcut .t09ht3zKRvLkgNXqaUA6,
+.main-cardImage-imageWrapper,
+.PromotionDefaultNativeImage-module_image-container__gQhJp,
+.main-nowPlayingWidget-coverArt {
+  position: relative;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    box-shadow: var(--glass-shadow) !important;
+    border-radius: inherit;
+  }
+}
+
+.main-entityHeader-imageContainerNew {
+  position: relative;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    box-shadow: var(--glass-shadow) !important;
+    border-radius: 20px;
+  }
+}
+
+.x-filterBox-expandButton {
+  transition: box-shadow 0.3s ease;
+}
+
+.x-filterBox-expandButton:focus, .x-filterBox-expandButton:hover {
   box-shadow: var(--glass-shadow);
 }
