@@ -3042,3 +3042,9 @@ main section .search-searchCategory-categoryGrid {
 .x-filterBox-expandButton:focus, .x-filterBox-expandButton:hover {
   box-shadow: var(--glass-shadow);
 }
+
+@media (max-width: 1100px) {
+  .Root__now-playing-bar {
+    width: 100% !important;
+  }
+}
