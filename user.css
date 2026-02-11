@@ -849,7 +849,7 @@ a.main-contextMenu-menuItemButton:hover {
   background-color: var(--background-tinted-highlight);
   border-radius: 20px;
   box-shadow: var(--glass-shadow);
-  transform: translateY(-1px);
+  transform: scale(1.02);
 }
 
 .main-shelf-shelfGrid.XgnK7yFRg5QZApyxEAtZ {
@@ -3040,7 +3040,8 @@ main section .search-searchCategory-categoryGrid {
   transition: box-shadow 0.3s ease;
 }
 
-.x-filterBox-expandButton:focus, .x-filterBox-expandButton:hover {
+.x-filterBox-expandButton:focus,
+.x-filterBox-expandButton:hover {
   box-shadow: var(--glass-shadow);
 }
 
