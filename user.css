@@ -3049,3 +3049,8 @@ main section .search-searchCategory-categoryGrid {
     width: 100% !important;
   }
 }
+
+.ChipInnerComponent-sm-isUsingKeyboard,
+.ChipInnerComponent-sm-selected-isUsingKeyboard {
+  box-shadow: var(--glass-shadow);
+}
