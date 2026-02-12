@@ -2376,9 +2376,9 @@ div#lyrics-background-root {
 }
 
 #spicetify-update pre {
-  background-color: transparent;
-  border-radius: 12px;
-  box-shadow: var(--glass-shadow);
+  background-color: transparent !important;
+  border-radius: 12px !important;
+  box-shadow: var(--glass-shadow) !important;
 }
 
 .bZu9z5uN3CYG_zTFA97L:focus-visible,
