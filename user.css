@@ -3055,3 +3055,24 @@ main section .search-searchCategory-categoryGrid {
 .ChipInnerComponent-sm-selected-isUsingKeyboard {
   box-shadow: var(--glass-shadow);
 }
+
+.qC4GlxGtxeTM1gGsftbJ {
+  background-color: transparent;
+  --glass-filter: url(#glass-filter--r1-7);
+  backdrop-filter: var url(#glass-filter--r1-7) (--glass-filter) blur(2px);
+  box-shadow: var(--glass-shadow);
+}
+
+@property --progress-bar-transform {
+  inherits: true;
+  initial-value: 0%;
+  syntax: '<percentage>';
+}
+
+.progress-bar {
+  transition: --progress-bar-transform 1s linear !important;
+}
+
+.progress-bar--isDragging {
+  transition-duration: 150ms !important;
+}
