@@ -3070,3 +3070,13 @@ main section .search-searchCategory-categoryGrid {
   backdrop-filter: var(--glass-filter) blur(2px);
   box-shadow: var(--glass-shadow);
 }
+
+@media (max-width: 1600px) {
+  .BntgkZDiA74b6eLOX2rQ {
+    margin-top: 15px;
+  }
+}
+
+span.e-91000-text.encore-text-headline-large.encore-internal-color-text-base {
+    white-space: nowrap;
+}
