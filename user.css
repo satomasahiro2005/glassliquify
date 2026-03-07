@@ -263,6 +263,8 @@
 
 .custom-navlinks-scrollable_container {
   border-radius: 50px;
+  --glass-filter: url(#glass-filter--r1-7);
+  backdrop-filter: var(--glass-filter) blur(2px);
 }
 
 .main-entityHeader-container.gmKBgPCnX785KDicbdJu {
@@ -2638,6 +2640,7 @@ aside video {
   0% {
     filter: blur(0px) brightness(0.70);
   }
+
   80% {
     -webkit-transform: scale(1);
     transform: scale(2);
@@ -3076,5 +3079,5 @@ main section .search-searchCategory-categoryGrid {
 }
 
 span.e-91000-text.encore-text-headline-large.encore-internal-color-text-base {
-    white-space: nowrap;
+  white-space: nowrap;
 }
