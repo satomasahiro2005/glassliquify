@@ -78,7 +78,7 @@
 
 .layer-a.active,
 .layer-b.active {
-  opacity: 0.55;
+  opacity: 1;
 }
 
 /* Animated Background - Apple Music Style */
