@@ -3112,4 +3112,11 @@ span.e-91000-text.encore-text-headline-large.encore-internal-color-text-base {
 
 .UfogM59HjeOWOZBR25vD, .x3pSIMzsfPui8yrJ7cQX {
   border-radius: 7px;
+  box-shadow: var(--glass-shadow);
+  border: none;
+}
+
+.XNBhseCmoagtJ480fTy3 {
+  border-radius: 12px;
+  box-shadow: var(--glass-shadow);
 }
