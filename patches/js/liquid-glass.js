@@ -1001,6 +1001,19 @@
    * a scroll, a resize, a rescan, or the slow safety tick. */
   function markDirty() { dirty = true; }
 
+  /* One corner for the whole app. Clamping per element - to half its height,
+   * or to a third of it - is what stopped the radius being uniform: a column
+   * kept the full curve while a shortcut tile got whatever fitted, and the two
+   * read as different shapes side by side.
+   *
+   * Nothing under MIN_GLASS_SIZE is drawn, so half of that is the largest
+   * radius every surface can carry without turning into a pill. Past it the
+   * knob has nothing left to give: a taller panel could take more, but then it
+   * would not match the tile beside it. */
+  function uniformRadius() {
+    return Math.min(DEFAULTS.cornerRadius * DEFAULTS.radiusScale, MIN_GLASS_SIZE / 2);
+  }
+
   function drawCinema(el) {
     var dpr = window.devicePixelRatio || 1;
     var W = Math.round(window.innerWidth * dpr);
@@ -1155,7 +1168,7 @@
       /* Same radius the sweep clips to. Leaving the shader on the element's own
        * radius put the sheet's edge inside or outside the clipped corner, and
        * the frame disappeared where they disagreed. */
-      var radius = Math.min(DEFAULTS.cornerRadius * DEFAULTS.radiusScale, minDim / 2 - 1);
+      var radius = uniformRadius();
       /* The corner reads as Apple's because of its curvature, not because it is
        * bigger. Keep the theme's radius and give the element the same
        * superellipse the shader uses - safe now that the theme's own border and
