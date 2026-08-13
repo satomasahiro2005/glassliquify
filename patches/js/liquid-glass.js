@@ -67,7 +67,11 @@
   var MAX_ELEMENTS = 400;   // backstop; drawing is cheap, layout reads are not
 
   var DEFAULTS = {
-    superness: 4,
+    /* The element keeps its own border and shadow, and CSS draws those on its
+     * circular border-radius. Shaping the glass as a superellipse then puts two
+     * differently curved outlines on the same corner. Match the element; the
+     * panel can push this up for a true squircle, at the cost of that mismatch. */
+    superness: 2,
     height: 24,
     amount: 48,
     depthEffect: 1,

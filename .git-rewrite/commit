@@ -1,22 +1,6 @@
-tree e7c2ea3d35742efde6a9916f73306f1ed2d6d9c5
-author Niklas <153382862+NMWplays@users.noreply.github.com> 1769377309 +0100
-committer GitHub <noreply@github.com> 1769377309 +0100
-gpgsig -----BEGIN PGP SIGNATURE-----
- 
- wsFcBAABCAAQBQJpdo4dCRC1aQ7uu5UhlAAAIJ0QAK9+4IRSiVvTns0/lcU3NREO
- LTcGhm9ZpZF/HMUDmfWXRmDNVIgj2Z/JhEHeMyh8jj/qVAiwKcnWd7FOBCv+62ej
- OHzoMiW0nZOtSLSY1fa5QVM5nkZ+bw+oKPkhVpCnT/ytc/I33X2uQd5R96gN531T
- eLAHBOlJKysVcok//1uR7Q4l0E0X1fHa/wZov22C/F0J8ji0sZ+EZ8aKKpZuwf+L
- 8XfDATfJxmkNuQNod9Mt8oTRMrhuXQJdIw2EJ/RIEj5Ri0mVzmO8ICZ8FwOY7ZLi
- wk/sgqqgZMVpS/uxa+eb0cnU2gt6Y4NVWvhI7abPu3inu48nqw8TKrsopQ1RpiYr
- oINEdHpKMBpSWU058Krv3bBRt30RUjZXZv4zk05K8lPUmFFtcw8fm7vpZ1Uw5A7D
- BLrNxq8rQO3UeqzpIjP4OiZwrZaIb/IHcfYLKuiK2bDzbnDC6oR4/epjLvm3uG0h
- rdjk04774YT0zY9VhYb+mZNXjusOatKcKzXmIvCnES2JWCUE6PrtPXLJBC3lpkpp
- U1yWbrqHYgbbLXKmnWPKPkHdVKn5EjSRirrt4wMWrGqi4JfnQA9vL38y4CGjrUkG
- vJeZ4ASuDJ3QCBbCB4u+PRiAKj4sowqw3+6FkDBDlbUbNKrjR7dVYuP4yNb2XZcr
- 5fr8d6M1mRDiVBXmGAvZ
- =hb3V
- -----END PGP SIGNATURE-----
- 
+tree 09e120c1f62939e52986c47767f5608d197a7aff
+parent b8f14949b5c639022cb3f9242623f07197a152ab
+author Niklas <153382862+NMWplays@users.noreply.github.com> 1776725674 +0200
+committer Niklas <153382862+NMWplays@users.noreply.github.com> 1776725674 +0200
 
-Initial commit
+style fix
