@@ -1194,11 +1194,12 @@
       });
       /* Every corner the sweep clipped, put back. These are the app's own
        * boxes, not surfaces of ours, so nothing else would ever clear them. */
-      for (var s = 0; s < swept.length; s++) {
-        swept[s].__lgCorner = null;
-        swept[s].style.removeProperty('clip-path');
-      }
-      swept = [];
+      swept.forEach(function (el) {
+        el.__lgCorner = null;
+        el.style.removeProperty('clip-path');
+      });
+      swept.clear();
+      sweepCursor = 0;
       document.documentElement.classList.remove('liquify-lg-wall');
       document.documentElement.classList.remove('liquify-cinema');
       document.querySelectorAll('[' + FLOAT_ATTR + ']').forEach(function (el) {
@@ -1246,59 +1247,66 @@
    * differ. Sweep for anything still carrying the theme's bulk filter and take
    * the blur off it, if it is big enough that glass was the point. Small
    * controls keep theirs - it is the only thing making them visible. */
-  var swept = [];
+  var swept = new Set();
+
+  /* Every rounded corner in the app, not just the glass. A superellipse next
+   * to a circular arc at the same radius reads as two different shapes, and
+   * the app is full of both. Circles are left alone - an avatar is meant to be
+   * a circle, not a squircle.
+   *
+   * Only boxes that actually paint at their corner. A transparent layout
+   * wrapper has no arc to correct, so a clip on it can only take content away -
+   * and it did: three wrappers around the now-playing cover kept a polygon from
+   * when they were 280 wide and cut 108px off the artwork.
+   *
+   * Whatever gets a clip is remembered, so a box that stops qualifying - lost
+   * its radius, its fill, or got too small - has the clip taken off again
+   * rather than keeping a stale one for good.
+   *
+   * A slice at a time. The tree is 5600 elements and reading a computed style
+   * for each of them is 14ms; doing that in one go is a stall you can see. The
+   * cursor carries over, so the whole tree is still covered, just spread out.
+   *
+   * There used to be a first pass over the same 4000 elements that read every
+   * rect and every style and then did nothing - the body was comments. It cost
+   * the same 14ms for no effect at all. */
+  var SWEEP_BUDGET = 900;
+  var sweepCursor = 0;
 
   function sweepThemeGlass() {
     var all = document.querySelectorAll('.Root__top-container *');
-    for (var i = 0; i < all.length && i < 4000; i++) {
+    if (sweepCursor >= all.length) sweepCursor = 0;
+    var end = Math.min(all.length, sweepCursor + SWEEP_BUDGET);
+
+    for (var i = sweepCursor; i < end; i++) {
       var el = all[i];
-      if (el.hasAttribute('data-liquify-lg')) continue;
-      var r = el.getBoundingClientRect();
-      if (Math.min(r.width, r.height) < MIN_GLASS_SIZE) continue;
-      var cs = getComputedStyle(el);
-      var bf = cs.backdropFilter || cs.webkitBackdropFilter || '';
-      if (bf === 'none' || bf.indexOf('blur') < 0) continue;
-      /* Left alone on purpose. Taking the theme's glass off something this
-       * pass does not replace leaves the element with no glass at all - the
-       * shortcut tiles lost their outlines entirely that way. Only the draw
-       * pass strips, and only what it draws. */
+      var keep = false, key2 = null, rad = 0, r2 = null;
+      r2 = el.getBoundingClientRect();
+      if (r2.width >= 16 && r2.height >= 16) {
+        var cs2 = getComputedStyle(el);
+        rad = parseFloat(cs2.borderTopLeftRadius);
+        keep = !isNaN(rad) && rad >= 6 &&
+          cs2.borderTopLeftRadius === cs2.borderBottomRightRadius &&
+          rad < Math.min(r2.width, r2.height) / 2 - 0.5 &&    // not a circle
+          paintsAtItsCorner(cs2);
+        if (keep) key2 = (r2.width | 0) + 'x' + (r2.height | 0) + 'r' + (rad | 0);
+      }
+      if (keep) {
+        swept.add(el);
+        if (el.__lgCorner === key2 && el.style.clipPath) continue;
+        el.__lgCorner = key2;
+        el.style.clipPath = squirclePath(r2.width, r2.height, rad, DEFAULTS.superness);
+      } else if (swept.has(el)) {
+        swept.delete(el);
+        el.__lgCorner = null;
+        el.style.removeProperty('clip-path');
+      }
     }
 
-    /* Every rounded corner in the app, not just the glass. A superellipse next
-     * to a circular arc at the same radius reads as two different shapes, and
-     * the app is full of both. Circles are left alone - an avatar is meant to
-     * be a circle, not a squircle.
-     *
-     * Only boxes that actually paint at their corner. A transparent layout
-     * wrapper has no arc to correct, so a clip on it can only take content
-     * away - and it did: three wrappers around the now-playing cover kept a
-     * polygon from when they were 280 wide and cut 108px off the artwork.
-     *
-     * Anything given a clip is remembered, so a box that stops qualifying -
-     * because it lost its radius, its fill, or got too small - has the clip
-     * taken off again instead of keeping a stale one for good. */
-    var stale = swept;
-    swept = [];
-    for (i = 0; i < all.length && i < 4000; i++) {
-      el = all[i];
-      var r2 = el.getBoundingClientRect();
-      if (r2.width < 16 || r2.height < 16) continue;
-      var cs2 = getComputedStyle(el);
-      var rad = parseFloat(cs2.borderTopLeftRadius);
-      if (isNaN(rad) || rad < 6) continue;
-      if (cs2.borderTopLeftRadius !== cs2.borderBottomRightRadius) continue;
-      if (rad >= Math.min(r2.width, r2.height) / 2 - 0.5) continue;   // a circle
-      if (!paintsAtItsCorner(cs2)) continue;
-      var key2 = (r2.width | 0) + 'x' + (r2.height | 0) + 'r' + (rad | 0);
-      swept.push(el);
-      if (el.__lgCorner === key2 && el.style.clipPath) continue;
-      el.__lgCorner = key2;
-      el.style.clipPath = squirclePath(r2.width, r2.height, rad, DEFAULTS.superness);
-    }
-    for (i = 0; i < stale.length; i++) {
-      if (swept.indexOf(stale[i]) >= 0) continue;
-      stale[i].__lgCorner = null;
-      stale[i].style.removeProperty('clip-path');
+    sweepCursor = end;
+    if (sweepCursor >= all.length) {
+      // one full lap done: drop anything that has left the document
+      swept.forEach(function (el) { if (!el.isConnected) swept.delete(el); });
     }
   }
 
@@ -1376,6 +1384,31 @@
    * element forces layout, so it only runs when something could have moved:
    * a scroll, a resize, a rescan, or the slow safety tick. */
   function markDirty() { dirty = true; }
+
+  /* Rescanning is the expensive thing in this extension, not drawing. It runs
+   * ~90 selectors over a 5600-element tree and reads a computed style for
+   * every hit: 68ms. On a 400ms interval that is a stall four times every two
+   * seconds, and landing one on top of a scrolling frame is what the stutter
+   * actually was - the frames themselves were 15ms.
+   *
+   * So it waits for a gap. Never during a scroll, never while the toggle is
+   * off, and through requestIdleCallback so it takes a frame the compositor
+   * was not using. The timeout keeps it honest if the app never goes idle. */
+  var lastScroll = 0;
+  var rescanTimer = null;
+
+  function scheduleRescan(delay) {
+    if (rescanTimer) return;
+    rescanTimer = setTimeout(function () {
+      rescanTimer = null;
+      var run = function () {
+        if (enabled && performance.now() - lastScroll > 200) rescan();
+        scheduleRescan();
+      };
+      if (window.requestIdleCallback) window.requestIdleCallback(run, { timeout: 600 });
+      else run();
+    }, delay || 400);
+  }
 
   /* Liquify writes its glass onto the elements themselves, inline. Taking a
    * surface over means overwriting that, and letting it go used to mean
@@ -1835,10 +1868,13 @@
     window.addEventListener('resize', function () { refreshBackdrop(); });
 
     rescan();
-    setInterval(rescan, 400);
+    scheduleRescan();
 
     // anything that can move a surface without a rescan
-    window.addEventListener('scroll', markDirty, { capture: true, passive: true });
+    window.addEventListener('scroll', function () {
+      lastScroll = performance.now();
+      dirty = true;
+    }, { capture: true, passive: true });
     window.addEventListener('resize', markDirty, { passive: true });
     window.addEventListener('transitionrun', markDirty, { capture: true, passive: true });
     window.addEventListener('animationstart', markDirty, { capture: true, passive: true });
