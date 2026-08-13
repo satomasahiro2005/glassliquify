@@ -49,13 +49,19 @@
     /* The card itself, not the box around its cover. Wrapping the artwork was
      * what put a film on it; the card is the frame that holds the cover and
      * its title, and that is a surface like any other. */
-    TARGETS.push({ selector: '.main-card-card', radius: 20, ca: true });
+    /* Spotify prefixes every encore class with the build number
+     * (e-10451-box--interactive), so match the part that does not change.
+     * .main-card-card is the older markup and no longer exists here. */
+    ['[class*="box--interactive"]', '.main-card-card'].forEach(function (sel) {
+      TARGETS.push({ selector: sel, radius: 20, ca: true });
+    });
 
     /* Controls the theme's list misses: the icons at the top right, and the
      * library header's collapse and create buttons. They sit in the same rows
      * as surfaces that do have glass, so leaving them flat is what stands
      * out. */
     ['.main-actionButtons > button',
+     '.main-topBar-topbarContentRight > button',
      '.main-yourLibraryX-headerContent button'].forEach(function (sel) {
       TARGETS.push({ selector: sel, radius: 17, ca: true });
     });
