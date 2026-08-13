@@ -38,6 +38,14 @@
      * control in the row. */
     TARGETS.push({ selector: '#liquify-lg-btn', radius: 17, ca: true });
 
+    /* The three columns. The theme leaves them as plain framed boxes, which is
+     * the one place the app still looks like it did before. They are the
+     * largest surfaces on screen and their backdrop is the wallpaper, so there
+     * is no reason for them to be the exception. */
+    ['.Root__nav-bar', '.Root__main-view', '.Root__right-sidebar'].forEach(function (sel) {
+      TARGETS.push({ selector: sel, radius: 20, ca: true });
+    });
+
     /* Surfaces that sit on top of the app rather than in it. These want the
      * frosted end of the material: they are asking for attention, and reading
      * a dialog over a sharp wallpaper is hard. Marked here rather than left to
@@ -127,7 +135,11 @@
     superness: 4,        /* superellipse exponent: 2 is a circular arc, larger
                           * is squarer. Not a roundness dial - it sets how much
                           * of the corner is straight. */
-    radiusScale: 1.06,   // a hair over the theme's radii, no more
+    /* One radius for every corner in the app. Using each element's own made the
+     * shape track its size - a 48px row clamps to a pill, a tall panel keeps
+     * 20px - so no two corners matched. */
+    cornerRadius: 18,
+    radiusScale: 3,
     height: 24,
     amount: 48,
     depthEffect: 1,
@@ -137,7 +149,7 @@
     dispersionCorner: 1,   // 1 = corners only, as Backdrop and iOS do it
     brightness: 0,
     contrast: 1,
-    saturation: 1.5,
+    saturation: 1.1,   // clear glass barely lifts it; 1.5 reads as a filter
     surface: [1, 1, 1, 0.05],
     hlAngle: 45,
     hlFalloff: 2,
@@ -487,14 +499,21 @@
   };
 
   /* Clips a quad to the box that scrolls it, so glass cannot spill out of its
-   * container. Pixel y runs downward here; GL scissor counts from the bottom. */
+   * container.
+   *
+   * No y flip here. Every surface is drawn into the render target with pixel y
+   * as row y, and end() flips once on the way to the canvas - so inside the
+   * target a CSS box is already the scissor box. Flipping again put the clip at
+   * its mirror image: wide clips still happened to cover their element, which
+   * is why the columns and the sections looked right, but a section clipping
+   * its own children landed hundreds of pixels away and cut them out entirely.
+   * That is what left the shortcut tiles and the shelf cards with no glass. */
   Renderer.prototype.scissor = function (box) {
     var gl = this.gl;
     if (!box) { gl.disable(gl.SCISSOR_TEST); return; }
-    var H = this.size[1];
     gl.enable(gl.SCISSOR_TEST);
     gl.scissor(Math.max(0, Math.floor(box.x)),
-               Math.max(0, Math.floor(H - (box.y + box.h))),
+               Math.max(0, Math.floor(box.y)),
                Math.max(0, Math.ceil(box.w)),
                Math.max(0, Math.ceil(box.h)));
   };
@@ -792,14 +811,28 @@
        * which is what reads as a doubled corner in the right pane. */
       '.Root__right-sidebar,.Root__nav-bar{box-shadow:none!important;' +
       'border-color:transparent!important;}' +
+      /* The pane header strip sits ~20px inside the pane's own frame and the
+       * theme outlines both, so the corner reads as two lines. The strip is the
+       * one you actually look at, so the pane's frame is the one that goes. */
+      '.Root__right-sidebar > *:first-child{box-shadow:none!important;' +
+      'border-color:transparent!important;}' +
+      /* No border of ours. Adding one put a second outline on every surface -
+       * the glass is the effect, the frame is not ours to draw. */
+      /* The element's own fill has to go, or it sits on top of the sheet and
+       * hides it - the shortcut tiles were painted over by their own background
+       * while the container behind them showed through fine. Only surfaces we
+       * draw lose it; the small controls we leave alone keep theirs, since for
+       * them the fill is the whole button. */
       '[data-liquify-lg]{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
+      'background-color:transparent!important;background-image:none!important;' +
       'border-color:transparent!important;box-shadow:none!important;' +
       'outline:none!important;background-image:none!important;' +
       'background-color:transparent!important;}' +
       '[data-liquify-lg]::before,[data-liquify-lg]::after{box-shadow:none!important;' +
       'border-color:transparent!important;background:none!important;}' +
       /* the canvas draws the wallpaper, so the theme's own layers would double it */
-      '.liquify-bg-layer,.liquify-animated-bg{display:none!important;}' +
+      'html.liquify-lg-wall .liquify-bg-layer,' +
+      'html.liquify-lg-wall .liquify-animated-bg{display:none!important;}' +
       /* The lens bends the wallpaper's detail, so the wallpaper must not be
        * pre-blurred. This belongs here rather than in the theme's CSS: with it
        * in user.css the toggle's off state was not the untouched theme either,
@@ -1119,7 +1152,10 @@
       drawn++;
 
       var minDim = Math.min(rr.width, rr.height);
-      var radius = Math.min(mm.radius * DEFAULTS.radiusScale, minDim / 2);
+      /* Same radius the sweep clips to. Leaving the shader on the element's own
+       * radius put the sheet's edge inside or outside the clipped corner, and
+       * the frame disappeared where they disagreed. */
+      var radius = Math.min(DEFAULTS.cornerRadius * DEFAULTS.radiusScale, minDim / 2 - 1);
       /* The corner reads as Apple's because of its curvature, not because it is
        * bigger. Keep the theme's radius and give the element the same
        * superellipse the shader uses - safe now that the theme's own border and
@@ -1206,7 +1242,6 @@
       renderer.draw(rect, opts);
       // hand this surface to whatever is drawn on top of it
       renderer.commit(rect, DEFAULTS.amount * dpr + 2);
-      if (DEFAULTS.roundChildren) roundChildren(mm.el, DEFAULTS.superness);
     }
     renderer.scissor(null);
     renderer.end();
@@ -1271,6 +1306,10 @@
       if (!img) {
         // no cover yet (startup) or the load failed - keep whatever we had and
         // come back for it rather than baking the fallback fill in
+        /* No cover yet: the theme's own background layer has a gradient for
+         * exactly this case, so let it show rather than covering the window
+         * with a flat fill. */
+        document.documentElement.classList.remove('liquify-lg-wall');
         if (!haveBackdrop) {
           var f = buildBackdropCanvas(null, W, H);
           lumMap = f;
@@ -1282,6 +1321,7 @@
       }
       currentUrl = url;
       haveBackdrop = 'cover';
+      document.documentElement.classList.add('liquify-lg-wall');
       var b = buildBackdropCanvas(img, W, H);
       lumMap = b;
       renderer.setBackdrop(b.sharp, b.blurred);
