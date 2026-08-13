@@ -70,5 +70,26 @@ grep -o "\.lyrics-lyrics-[a-zA-Z]*[^{]*{[^}]*}" \
   upstream の blob とハッシュが合わなくなって差分の確認ができない。
 - Spotify は winget 版（`%APPDATA%\Spotify`）。Store 版に戻すと spicetify が
   一切効かなくなる。
-- 自動再適用の guard（`%LOCALAPPDATA%\spicetify-guard\`）は**消えている**。
-  Startup の `spicetify-guard.lnk` はリンク切れの状態。
+- 自動再適用の guard は一度消えていたので `guard/` に作り直した。実体を
+  `%LOCALAPPDATA%\spicetify-guard\` へ置くのは変わらないが、**ソースはこの
+  リポジトリにある**ので消えても `.\guard\install-guard.ps1` で戻せる。
+
+## guard
+
+`%LOCALAPPDATA%\Spotify\Update` のブロックと spicetify の適用状態を5分ごとに
+見張って、崩れていたら直す。Startup から wscript 経由で無音起動。
+
+```powershell
+.\guard\install-guard.ps1              # 設置 + Startup登録 + 即起動
+.\guard\install-guard.ps1 -Uninstall   # 停止 + Startup解除
+.\guard\spicetify-guard.ps1 -Once      # 手動で1回だけ点検
+```
+
+- ログ: `%LOCALAPPDATA%\spicetify-guard\guard.log`（状態が変わったときだけ書く）
+- Spotify に更新させたいときは同じ場所に `PAUSE` という名前のファイルを置く。
+  ある間は Update ブロックの復元も再適用もしない。
+- 適用が外れた判定は `Apps\xpui\index.html` に `spicetifyWrapper.js` が
+  無いかどうか。Spotify のバージョンが `[Backup] version` とずれていたら
+  Backup と Extracted を捨ててから `backup apply` する。
+- `.ps1` / `.cmd` / `.vbs` は**ASCII のみ**。Windows PowerShell 5.1 は BOM 無しの
+  `.ps1` を CP932 として読むので、日本語コメントを入れると壊れる。
