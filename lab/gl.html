@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>liquid glass lab (webgl)</title>
+<script src="gl.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body { font: 13px/1.5 ui-sans-serif, system-ui, "Segoe UI", sans-serif; color: #fff; background: #000; }
+
+  /* the known backdrop: dimming and background blur are baked into it, the way
+     Backdrop applies them to the backdrop rather than to the glass */
+  #bgc { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; }
+  /* the glass itself */
+  #glc { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 1; }
+  /* content that sits on the glass and is not refracted */
+  #content { position: fixed; inset: 0; z-index: 2; pointer-events: none; }
+
+  .row { position: absolute; border-radius: 20px; background: rgba(255,255,255,.10);
+         border: 1px solid rgba(255,255,255,.14); padding: 12px 16px; }
+  .row b { display: block; font-size: 13px; }
+  .row span { font-size: 12px; opacity: .8; }
+
+  #ui {
+    position: fixed; z-index: 5; right: 12px; top: 12px; width: 250px; padding: 10px 12px;
+    background: rgba(18,18,20,.92); border: 1px solid rgba(255,255,255,.12);
+    border-radius: 12px; max-height: calc(100vh - 24px); overflow: auto;
+  }
+  #ui h1 { font-size: 11px; margin: 0 0 8px; opacity: .55; letter-spacing: .08em; text-transform: uppercase; }
+  #ui h2 { font-size: 10px; margin: 11px 0 3px; opacity: .45; letter-spacing: .1em; text-transform: uppercase; }
+  #ui label { display: flex; align-items: center; gap: 7px; margin: 4px 0; font-size: 12px; }
+  #ui label > span:first-child { flex: 0 0 74px; opacity: .75; }
+  #ui input[type=range] { flex: 1; min-width: 0; }
+  #ui output { flex: 0 0 38px; text-align: right; font-variant-numeric: tabular-nums; }
+  #ui select { width: 100%; margin-top: 4px; padding: 4px; background: #26262a; color: #fff;
+               border: 1px solid rgba(255,255,255,.14); border-radius: 7px; font: inherit; }
+  #err { position: fixed; left: 8px; bottom: 8px; z-index: 9; color: #ff6b6b; font: 11px ui-monospace, monospace;
+         white-space: pre-wrap; max-width: 60vw; max-height: 40vh; overflow: auto; }
+</style>
+</head>
+<body>
+
+<canvas id="bgc"></canvas>
+<canvas id="glc"></canvas>
+<div id="content"></div>
+
+<div id="ui">
+  <h1>liquid glass (webgl)</h1>
+  <select id="preset">
+    <option value="notification">通知センター (クリア)</option>
+    <option value="controlcenter">control centre タイル</option>
+    <option value="dialog">dialog (暗)</option>
+  </select>
+  <select id="bgmode">
+    <option value="photo">wallpaper</option>
+    <option value="grid">test grid</option>
+  </select>
+
+  <h2>pull</h2>
+  <label><span>progress</span><input type="range" id="progress" min="0" max="1" step="0.01" value="1"><output id="progress_o"></output></label>
+
+  <h2>lens</h2>
+  <label><span>height</span><input type="range" id="height" min="1" max="120" step="1" value="24"><output id="height_o"></output></label>
+  <label><span>amount</span><input type="range" id="amount" min="0" max="200" step="1" value="48"><output id="amount_o"></output></label>
+  <label><span>radius</span><input type="range" id="radius" min="0" max="120" step="1" value="56"><output id="radius_o"></output></label>
+  <label><span>superness</span><input type="range" id="superness" min="2" max="8" step="0.1" value="4"><output id="superness_o"></output></label>
+  <label><span>depth</span><input type="range" id="depthEffect" min="0" max="1" step="0.02" value="1"><output id="depthEffect_o"></output></label>
+  <label><span>dispersion</span><input type="range" id="dispersion" min="0" max="1" step="0.02" value="0"><output id="dispersion_o"></output></label>
+
+  <h2>backdrop 側</h2>
+  <label><span>bg blur</span><input type="range" id="bgBlur" min="0" max="30" step="0.5" value="0"><output id="bgBlur_o"></output></label>
+  <label><span>dim</span><input type="range" id="dim" min="0" max="0.7" step="0.02" value="0"><output id="dim_o"></output></label>
+
+  <h2>glass 側</h2>
+  <label><span>brightness</span><input type="range" id="brightness" min="-0.4" max="0.5" step="0.02" value="0"><output id="brightness_o"></output></label>
+  <label><span>contrast</span><input type="range" id="contrast" min="0" max="1.5" step="0.05" value="1"><output id="contrast_o"></output></label>
+  <label><span>saturation</span><input type="range" id="saturation" min="1" max="2.5" step="0.05" value="1.5"><output id="saturation_o"></output></label>
+  <label><span>tint a</span><input type="range" id="tintA" min="0" max="0.6" step="0.01" value="0.05"><output id="tintA_o"></output></label>
+  <select id="tintC">
+    <option value="1,1,1">tint: white</option>
+    <option value="0,0,0">tint: black</option>
+    <option value="0.07,0.07,0.07">tint: #121212</option>
+  </select>
+
+  <h2>highlight</h2>
+  <label><span>angle</span><input type="range" id="hlAngle" min="0" max="360" step="5" value="45"><output id="hlAngle_o"></output></label>
+  <label><span>falloff</span><input type="range" id="hlFalloff" min="0.2" max="6" step="0.1" value="2"><output id="hlFalloff_o"></output></label>
+  <label><span>alpha</span><input type="range" id="hlAlpha" min="0" max="1" step="0.02" value="0.5"><output id="hlAlpha_o"></output></label>
+  <label><span>width</span><input type="range" id="hlWidth" min="0.5" max="12" step="0.5" value="1.5"><output id="hlWidth_o"></output></label>
+</div>
+
+<div id="err"></div>
+
+<script>
+const RANGES = ['progress','height','amount','radius','superness','depthEffect','dispersion',
+                'bgBlur','dim','brightness','contrast','saturation','tintA',
+                'hlAngle','hlFalloff','hlAlpha','hlWidth'];
+const ui = {};
+RANGES.concat(['preset','bgmode','tintC']).forEach(id => ui[id] = document.getElementById(id));
+
+/* Values measured from Backdrop's catalog. These are Kyant's reproduction of
+   iOS, not Apple's own numbers - kept separate on purpose. */
+const PRESETS = {
+  // control centre tiles: the glass carries no blur at all. the wallpaper
+  // behind is blurred 4dp and dimmed 40%.
+  controlcenter: { height: 24, amount: 48, radius: 34, depthEffect: 1, dispersion: 0.3,
+                   bgBlur: 4, dim: 0.40,
+                   brightness: 0, contrast: 1, saturation: 1.5, tintA: 0.05, tintC: '0,0,0',
+                   hlAngle: 45, hlFalloff: 2, hlAlpha: 0.5, hlWidth: 1.5 },
+  // dialog, dark theme: blur 8dp on the glass, backdrop dimmed 56%
+  dialog: { height: 24, amount: 48, radius: 48, depthEffect: 1, dispersion: 0.2,
+            bgBlur: 8, dim: 0.56,
+            brightness: 0, contrast: 1, saturation: 1.5, tintA: 0.40, tintC: '0.07,0.07,0.07',
+            hlAngle: 45, hlFalloff: 2, hlAlpha: 0.5, hlWidth: 1.5 },
+  // the clear sheet: no blur anywhere, the wallpaper stays sharp through it and
+  // the whole effect is the edge lens plus a saturation lift
+  notification: { height: 24, amount: 48, radius: 56, depthEffect: 1, dispersion: 0.3,
+                  bgBlur: 0, dim: 0.0,
+                  brightness: 0, contrast: 1, saturation: 1.5, tintA: 0.04, tintC: '1,1,1',
+                  hlAngle: 45, hlFalloff: 2, hlAlpha: 0.5, hlWidth: 1.5 },
+};
+
+let renderer, bgSharp, bgReady = false;
+const dpr = () => window.devicePixelRatio || 1;
+
+function sheetRect() {
+  const d = dpr();
+  const p = +ui.progress.value;
+  const mx = innerWidth * d * 0.09;
+  const my = innerHeight * d * 0.07;
+  const w = innerWidth * d - mx * 2;
+  const h = (innerHeight * d - my * 2) * (0.35 + 0.65 * p);
+  return { x: mx, y: my, w, h };
+}
+
+/* ---- backdrop ----------------------------------------------------------- */
+
+function drawScene(c, W, H, d, kind) {
+  if (kind === 'grid') {
+    const s = 26 * d;
+    for (let y = 0; y < H; y += s) for (let x = 0; x < W; x += s) {
+      c.fillStyle = ((x / s + y / s) & 1) ? '#f2f2f5' : '#17171c';
+      c.fillRect(x, y, s, s);
+    }
+    c.strokeStyle = '#ff3b30'; c.lineWidth = 2 * d;
+    for (let x = 0; x < W; x += s * 5) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, H); c.stroke(); }
+    for (let y = 0; y < H; y += s * 5) { c.beginPath(); c.moveTo(0, y); c.lineTo(W, y); c.stroke(); }
+    return;
+  }
+  const g = c.createLinearGradient(0, 0, W * .3, H);
+  g.addColorStop(0, '#1b1035'); g.addColorStop(.45, '#6d2352'); g.addColorStop(1, '#0b2a3d');
+  c.fillStyle = g; c.fillRect(0, 0, W, H);
+  const blobs = [
+    [0.20, 0.22, 0.34, '#ff5f6d'], [0.78, 0.18, 0.26, '#ffc371'],
+    [0.60, 0.74, 0.36, '#22d3ee'], [0.10, 0.82, 0.24, '#a78bfa'],
+    [0.90, 0.62, 0.22, '#34d399'],
+  ];
+  for (const [bx, by, br, col] of blobs) {
+    const rr = br * Math.min(W, H);
+    const rg = c.createRadialGradient(bx * W, by * H, 0, bx * W, by * H, rr);
+    rg.addColorStop(0, col + 'd0'); rg.addColorStop(1, col + '00');
+    c.fillStyle = rg; c.beginPath(); c.arc(bx * W, by * H, rr, 0, Math.PI * 2); c.fill();
+  }
+  // hard edges, so refraction is readable
+  c.strokeStyle = 'rgba(255,255,255,.55)'; c.lineWidth = 2.5 * d;
+  for (let i = 0; i < 30; i++) {
+    const y = (i + .5) * H / 30;
+    c.beginPath(); c.moveTo(0, y); c.lineTo(W, y + Math.sin(i * .7) * 30 * d); c.stroke();
+  }
+  c.fillStyle = 'rgba(0,0,0,.5)';
+  c.font = `700 ${68 * d}px ui-sans-serif, system-ui`;
+  c.fillText('WALLPAPER', 0.08 * W, 0.62 * H);
+}
+
+function buildBackdrop() {
+  const d = dpr();
+  const W = Math.round(innerWidth * d), H = Math.round(innerHeight * d);
+  bgSharp = document.createElement('canvas');
+  bgSharp.width = W; bgSharp.height = H;
+  drawScene(bgSharp.getContext('2d'), W, H, d, ui.bgmode.value);
+  applyBackdrop();
+}
+
+function applyBackdrop() {
+  const d = dpr();
+  const W = bgSharp.width, H = bgSharp.height;
+  const sigma = +ui.bgBlur.value * d / 2;      // css blur radius -> sigma
+  const blurred = LiquidGL.gaussianBlur(bgSharp, sigma);
+
+  const out = document.getElementById('bgc');
+  out.width = W; out.height = H;
+  const c = out.getContext('2d');
+  c.drawImage(blurred, 0, 0);
+  const dim = +ui.dim.value;
+  if (dim > 0) { c.fillStyle = `rgba(0,0,0,${dim})`; c.fillRect(0, 0, W, H); }
+
+  renderer.setBackdrop(out);
+  bgReady = true;
+}
+
+/* ---- draw --------------------------------------------------------------- */
+
+function render() {
+  if (!bgReady) return;
+  const d = dpr();
+  const gl = document.getElementById('glc');
+  gl.width = Math.round(innerWidth * d);
+  gl.height = Math.round(innerHeight * d);
+
+  const p = +ui.progress.value;
+  const tint = ui.tintC.value.split(',').map(Number);
+  const o = {
+    radius: +ui.radius.value * d,
+    superness: +ui.superness.value,
+    height: +ui.height.value * d * p,
+    amount: +ui.amount.value * d * p,
+    depthEffect: +ui.depthEffect.value,
+    dispersion: +ui.dispersion.value,
+    brightness: +ui.brightness.value,
+    contrast: +ui.contrast.value,
+    saturation: +ui.saturation.value,
+    surface: [tint[0], tint[1], tint[2], +ui.tintA.value],
+    hlAngle: +ui.hlAngle.value,
+    hlFalloff: +ui.hlFalloff.value,
+    hlAlpha: +ui.hlAlpha.value,
+    hlWidth: +ui.hlWidth.value * d,
+  };
+
+  renderer.begin();
+  renderer.drawGlass(sheetRect(), o);
+  layoutContent();
+}
+
+function layoutContent() {
+  const d = dpr();
+  const r = sheetRect();
+  const host = document.getElementById('content');
+  host.innerHTML = '';
+  const rows = Math.max(0, Math.floor((r.h / d - 40) / 86));
+  for (let i = 0; i < Math.min(rows, 6); i++) {
+    const el = document.createElement('div');
+    el.className = 'row';
+    el.style.left = (r.x / d + 18) + 'px';
+    el.style.width = (r.w / d - 36) + 'px';
+    el.style.top = (r.y / d + 24 + i * 86) + 'px';
+    el.style.height = '72px';
+    el.innerHTML = '<b>通知タイトル ' + (i + 1) + '</b><span>本文のプレビューがここに入ります</span>';
+    host.appendChild(el);
+  }
+}
+
+/* ---- wiring ------------------------------------------------------------- */
+
+function syncOutputs() {
+  for (const id of RANGES) {
+    const o = document.getElementById(id + '_o');
+    if (o) o.value = ui[id].value;
+  }
+}
+
+function applyPreset() {
+  const p = PRESETS[ui.preset.value];
+  for (const k in p) if (ui[k]) ui[k].value = p[k];
+  syncOutputs(); applyBackdrop(); render();
+}
+
+try {
+  renderer = new LiquidGL.Renderer(document.getElementById('glc'));
+  buildBackdrop();
+  syncOutputs();
+  applyPreset();
+
+  for (const id of RANGES) {
+    ui[id].addEventListener('input', () => {
+      syncOutputs();
+      if (id === 'bgBlur' || id === 'dim') applyBackdrop();
+      render();
+    });
+  }
+  ui.tintC.addEventListener('input', render);
+  ui.preset.addEventListener('input', applyPreset);
+  ui.bgmode.addEventListener('input', () => { buildBackdrop(); render(); });
+  addEventListener('resize', () => { buildBackdrop(); render(); });
+  addEventListener('keydown', e => {
+    if (e.key === 'h') document.getElementById('ui').style.display =
+      document.getElementById('ui').style.display === 'none' ? '' : 'none';
+  });
+} catch (e) {
+  document.getElementById('err').textContent = String(e && e.message || e);
+}
+</script>
+</body>
+</html>

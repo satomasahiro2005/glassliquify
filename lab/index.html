@@ -16,72 +16,74 @@
   /* the "known" backdrop - one image, nothing scrolls under it */
   #bg { position: fixed; inset: 0; z-index: 0; }
   #bg canvas { width: 100%; height: 100%; display: block; }
-
   #stage { position: fixed; inset: 0; z-index: 1; }
 
   .panel {
     position: absolute;
     border-radius: var(--r, 24px);
     background: transparent;
-    box-shadow: 0 8px 32px rgba(0,0,0,.35);
     display: flex; align-items: center; justify-content: center;
     font-weight: 600; letter-spacing: .02em;
-    text-shadow: 0 1px 2px rgba(0,0,0,.5);
-  }
-  /* order matters: blur and saturate the backdrop first, then bend it.
-     doing the lens first smears the refraction into mush. */
-  .panel.on {
-    backdrop-filter: blur(var(--b, 2px)) saturate(var(--sat, 1.2)) var(--glass);
-    -webkit-backdrop-filter: blur(var(--b, 2px)) saturate(var(--sat, 1.2)) var(--glass);
-  }
-  .panel.on.legacyorder {
-    backdrop-filter: var(--glass) blur(var(--b, 2px)) saturate(var(--sat, 1.2));
-    -webkit-backdrop-filter: var(--glass) blur(var(--b, 2px)) saturate(var(--sat, 1.2));
-  }
-  /* inner shadow: the lip of the glass catching a little darkness */
-  .panel.rim::before {
-    content: ""; position: absolute; inset: 0; border-radius: inherit;
-    pointer-events: none;
-    box-shadow: inset 0 1px 1px rgba(255,255,255,calc(var(--rim,.55) * .5)),
-                inset 0 -1px 2px rgba(0,0,0,.25);
-  }
-  /* Apple's rim: a bright hairline that is brightest where the light hits */
-  .panel.rim::after {
-    content: ""; position: absolute; inset: 0; border-radius: inherit;
-    pointer-events: none;
-    padding: 1px;
-    background: linear-gradient(var(--lightdir, 145deg),
-      rgba(255,255,255,var(--rim, .55)) 0%,
-      rgba(255,255,255,.06) 38%,
-      rgba(255,255,255,0) 55%,
-      rgba(255,255,255,.10) 78%,
-      rgba(255,255,255,calc(var(--rim, .55) * .45)) 100%);
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor; mask-composite: exclude;
+    text-shadow: 0 1px 3px rgba(0,0,0,.55);
+    isolation: isolate;
   }
 
-  #p1 { left: 6%;  top: 12%; width: 300px; height: 300px; --r: 36px; }
-  #p2 { right: 5%; top: 8%;  width: 360px; height: 66%;   --r: 28px; }
-  #p3 { left: 8%;  bottom: 7%; width: 62%; height: 92px;  --r: 26px; }
+  /* layer order: blur the backdrop, lift its saturation, then bend it.
+     lens-first smears the refraction into mush. */
+  .panel.on {
+    backdrop-filter: blur(var(--b, 6px)) saturate(var(--sat, 1.5)) var(--lens);
+    -webkit-backdrop-filter: blur(var(--b, 6px)) saturate(var(--sat, 1.5)) var(--lens);
+  }
+  .panel.legacyorder.on {
+    backdrop-filter: var(--lens) blur(var(--b, 6px)) saturate(var(--sat, 1.5));
+    -webkit-backdrop-filter: var(--lens) blur(var(--b, 6px)) saturate(var(--sat, 1.5));
+  }
+
+  /* the glass body: a faint tint so it reads as a material, not a hole */
+  .panel.on::before {
+    content: ""; position: absolute; inset: 0; border-radius: inherit;
+    pointer-events: none; z-index: -1;
+    background: rgba(255,255,255,var(--tint, .06));
+    box-shadow: inset 0 0 var(--ishblur, 12px) rgba(0,0,0,var(--ish, .18));
+  }
+
+  /* the highlight, baked from the shape's own normals, added on top */
+  .panel.on::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit;
+    pointer-events: none;
+    background-image: var(--hl); background-size: 100% 100%;
+    mix-blend-mode: plus-lighter;
+  }
+
+  .panel.shadow { box-shadow: 0 10px 30px rgba(0,0,0,.32); }
+
+  /* a big sheet, like the notification centre pulled down: the effect reads
+     completely differently at this size, so it has to be judged here */
+  #p0 { left: 3%; top: 4%; width: 94%; height: 78%; --r: 56px; }
+  #p0 .row { position: absolute; left: 22px; right: 22px; height: 74px; border-radius: 18px;
+             background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.12); }
+  #p1 { left: 6%;  top: 12%; width: 300px; height: 300px; --r: 42px; }
+  #p2 { right: 5%; top: 8%;  width: 360px; height: 66%;   --r: 30px; }
+  #p3 { left: 8%;  bottom: 7%; width: 62%; height: 92px;  --r: 30px; }
   #p4 { left: 30%; top: 20%; width: 132px; height: 132px; --r: 66px; }
   #p5 { left: 30%; top: 46%; width: 220px; height: 48px;  --r: 24px; }
 
   #ui {
     position: fixed; z-index: 5; left: 12px; top: 12px;
-    width: 268px; padding: 12px 14px;
-    background: rgba(18,18,20,.86); border: 1px solid rgba(255,255,255,.12);
-    border-radius: 12px; backdrop-filter: blur(12px);
+    width: 262px; padding: 10px 12px;
+    background: rgba(18,18,20,.9); border: 1px solid rgba(255,255,255,.12);
+    border-radius: 12px;
     max-height: calc(100vh - 24px); overflow: auto;
   }
-  #ui h1 { font-size: 12px; margin: 0 0 10px; opacity: .6; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
-  #ui label { display: flex; align-items: center; gap: 8px; margin: 7px 0; font-size: 12px; }
-  #ui label > span:first-child { flex: 0 0 84px; opacity: .75; }
+  #ui h1 { font-size: 11px; margin: 0 0 8px; opacity: .55; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+  #ui h2 { font-size: 10px; margin: 12px 0 4px; opacity: .45; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+  #ui label { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 12px; }
+  #ui label > span:first-child { flex: 0 0 76px; opacity: .75; }
   #ui input[type=range] { flex: 1; min-width: 0; }
-  #ui output { flex: 0 0 42px; text-align: right; font-variant-numeric: tabular-nums; opacity: .9; }
-  #ui select, #ui button { width: 100%; margin-top: 6px; padding: 5px; background: #26262a; color: #fff; border: 1px solid rgba(255,255,255,.14); border-radius: 7px; font: inherit; }
-  #ui hr { border: 0; border-top: 1px solid rgba(255,255,255,.1); margin: 12px 0; }
-  #mapview { width: 100%; margin-top: 8px; border-radius: 6px; image-rendering: pixelated; background: #111; }
-  .hint { font-size: 11px; opacity: .5; margin-top: 8px; }
+  #ui output { flex: 0 0 40px; text-align: right; font-variant-numeric: tabular-nums; opacity: .9; }
+  #ui select { width: 100%; margin-top: 5px; padding: 4px; background: #26262a; color: #fff; border: 1px solid rgba(255,255,255,.14); border-radius: 7px; font: inherit; }
+  #mapview, #hlview { width: 48%; margin-top: 6px; border-radius: 5px; background: #111; vertical-align: top; }
+  .hint { font-size: 10px; opacity: .45; margin-top: 6px; }
 </style>
 </head>
 <body>
@@ -89,6 +91,7 @@
 <div id="bg"><canvas id="bgc"></canvas></div>
 
 <div id="stage">
+  <div class="panel" id="p0"></div>
   <div class="panel" id="p1">album</div>
   <div class="panel" id="p2">now playing</div>
   <div class="panel" id="p3">playbar</div>
@@ -98,45 +101,54 @@
 
 <div id="ui">
   <h1>liquid glass lab</h1>
-
   <select id="mode">
-    <option value="sdf">SDF lens (new)</option>
+    <option value="sdf">Kyant lens (new)</option>
     <option value="reactbits">reactbits ramp (Liquify now)</option>
     <option value="off">off</option>
   </select>
-
+  <select id="preset">
+    <option value="clear">clear sheet (通知センター)</option>
+    <option value="regular">regular</option>
+  </select>
+  <select id="scene">
+    <option value="sheet">big sheet only</option>
+    <option value="panels">small panels</option>
+  </select>
   <select id="bgmode">
     <option value="art">album art (synthetic)</option>
     <option value="grid">test grid</option>
     <option value="text">text</option>
   </select>
 
-  <hr>
-
-  <label><span>height</span><input type="range" id="height" min="2" max="80" step="1" value="18"><output id="height_o"></output></label>
-  <label><span>amount</span><input type="range" id="amount" min="0" max="60" step="0.5" value="14"><output id="amount_o"></output></label>
+  <h2>refraction</h2>
+  <label><span>height</span><input type="range" id="height" min="2" max="90" step="1" value="24"><output id="height_o"></output></label>
+  <label><span>amount</span><input type="range" id="amount" min="0" max="90" step="1" value="32"><output id="amount_o"></output></label>
   <label><span>superness</span><input type="range" id="superness" min="2" max="8" step="0.1" value="4"><output id="superness_o"></output></label>
-  <label><span>ior</span><input type="range" id="ior" min="1" max="2.5" step="0.01" value="1.5"><output id="ior_o"></output></label>
-  <label><span>dispersion</span><input type="range" id="dispersion" min="0" max="0.3" step="0.005" value="0.06"><output id="dispersion_o"></output></label>
-  <label><span>blur</span><input type="range" id="blur" min="0" max="24" step="0.5" value="2"><output id="blur_o"></output></label>
-  <label><span>saturate</span><input type="range" id="sat" min="1" max="2.5" step="0.05" value="1.2"><output id="sat_o"></output></label>
-  <label><span>rim</span><input type="range" id="rim" min="0" max="1" step="0.02" value="0.55"><output id="rim_o"></output></label>
-  <label><span>light</span><input type="range" id="lightdir" min="0" max="360" step="5" value="145"><output id="lightdir_o"></output></label>
+  <label><span>inflate</span><input type="range" id="gradInflate" min="1" max="3" step="0.05" value="1.5"><output id="gradInflate_o"></output></label>
+  <label><span>depth</span><input type="range" id="depthEffect" min="0" max="1" step="0.02" value="0"><output id="depthEffect_o"></output></label>
+  <label><span>dispersion</span><input type="range" id="dispersion" min="0" max="1" step="0.02" value="0"><output id="dispersion_o"></output></label>
 
-  <label style="gap:6px"><input type="checkbox" id="physical" style="flex:0 0 auto"><span style="flex:1;opacity:.75">physical (Snell + ior)</span></label>
-  <label style="gap:6px"><input type="checkbox" id="legacyorder" style="flex:0 0 auto"><span style="flex:1;opacity:.75">legacy order (lens first)</span></label>
-  <label style="gap:6px"><input type="checkbox" id="clip" style="flex:0 0 auto"><span style="flex:1;opacity:.75">squircle clip-path</span></label>
+  <h2>material</h2>
+  <label><span>blur</span><input type="range" id="blur" min="0" max="40" step="0.5" value="6"><output id="blur_o"></output></label>
+  <label><span>saturate</span><input type="range" id="sat" min="1" max="2.5" step="0.05" value="1.5"><output id="sat_o"></output></label>
+  <label><span>tint</span><input type="range" id="tint" min="0" max="0.4" step="0.01" value="0.06"><output id="tint_o"></output></label>
+  <label><span>inner sh</span><input type="range" id="ish" min="0" max="0.6" step="0.02" value="0.18"><output id="ish_o"></output></label>
 
-  <select id="profile">
-    <option value="circular">circular</option>
-    <option value="quadratic">quadratic</option>
-    <option value="smoothstep">smoothstep</option>
-  </select>
+  <h2>highlight</h2>
+  <label><span>angle</span><input type="range" id="hlAngle" min="0" max="360" step="5" value="45"><output id="hlAngle_o"></output></label>
+  <label><span>falloff</span><input type="range" id="hlFalloff" min="0.2" max="6" step="0.1" value="1"><output id="hlFalloff_o"></output></label>
+  <label><span>alpha</span><input type="range" id="hlAlpha" min="0" max="1" step="0.02" value="0.5"><output id="hlAlpha_o"></output></label>
+  <label><span>width</span><input type="range" id="hlWidth" min="0.5" max="10" step="0.5" value="1.5"><output id="hlWidth_o"></output></label>
+  <label><span>soften</span><input type="range" id="hlBlur" min="0.1" max="12" step="0.1" value="1"><output id="hlBlur_o"></output></label>
 
-  <hr>
-  <div style="opacity:.7;font-size:11px">displacement map (p1)</div>
-  <canvas id="mapview"></canvas>
-  <div class="hint">R = 横方向, G = 縦方向, 128 = 動かさない</div>
+  <h2>compare</h2>
+  <label style="gap:6px"><input type="checkbox" id="legacyorder"><span style="flex:1;opacity:.75">legacy order (lens first)</span></label>
+  <label style="gap:6px"><input type="checkbox" id="clip" checked><span style="flex:1;opacity:.75">squircle clip-path</span></label>
+  <label style="gap:6px"><input type="checkbox" id="shadow" checked><span style="flex:1;opacity:.75">drop shadow</span></label>
+  <label style="gap:6px"><input type="checkbox" id="hideui"><span style="flex:1;opacity:.75">hide this panel (h)</span></label>
+
+  <canvas id="mapview"></canvas> <canvas id="hlview"></canvas>
+  <div class="hint">左: 変位マップ (R=横 G=縦 128=不動) / 右: ハイライト</div>
 </div>
 
 <svg id="filters" width="0" height="0" aria-hidden="true" style="position:absolute"></svg>
@@ -144,21 +156,16 @@
 <script>
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const panels = [...document.querySelectorAll('.panel')];
+const RANGES = ['height','amount','superness','gradInflate','depthEffect','dispersion',
+                'blur','sat','tint','ish','hlAngle','hlFalloff','hlAlpha','hlWidth','hlBlur'];
+const CHECKS = ['legacyorder','clip','shadow','hideui'];
 const ui = {};
-['height','amount','superness','ior','dispersion','blur','sat','rim','lightdir','profile','mode','bgmode','physical','legacyorder','clip'].forEach(id => ui[id] = document.getElementById(id));
-const RANGES = ['height','amount','superness','ior','dispersion','blur','sat','rim','lightdir'];
+RANGES.concat(CHECKS, ['mode','bgmode']).forEach(id => ui[id] = document.getElementById(id));
 
-function opts() {
-  return {
-    height: +ui.height.value,
-    amount: +ui.amount.value,
-    superness: +ui.superness.value,
-    ior: +ui.ior.value,
-    physical: ui.physical.checked,
-    dispersion: +ui.dispersion.value,
-    profile: ui.profile.value,
-    dpr: window.devicePixelRatio || 1,
-  };
+function opts(radius) {
+  const o = { radius, dpr: window.devicePixelRatio || 1 };
+  for (const k of RANGES) o[k] = +ui[k].value;
+  return o;
 }
 
 function fe(name, attrs) {
@@ -167,11 +174,9 @@ function fe(name, attrs) {
   return n;
 }
 
-/* One filter per panel: the map has to match that panel's exact size and
- * radius, otherwise feImage stretches it and the corners lie.
- *
- * All three channels share one `scale`; the dispersion lives in the three maps.
- * See buildSet() for why. */
+/* One filter per panel: the map must match that panel's exact size and radius,
+ * or feImage stretches it and the corners lie.
+ * All three channels share one `scale`; the dispersion lives in the maps. */
 function buildFilter(id, hrefs, scale) {
   const f = fe('filter', {
     id, 'color-interpolation-filters': 'sRGB',
@@ -199,53 +204,61 @@ function buildFilter(id, hrefs, scale) {
   return f;
 }
 
-function radiusOf(el) {
-  return parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
-}
+const radiusOf = el => parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
 
 function rebuild() {
   const defs = document.getElementById('filters');
   defs.textContent = '';
-  const o = opts();
   const mode = ui.mode.value;
+  document.getElementById('ui').style.display = ui.hideui.checked ? 'none' : '';
 
   panels.forEach((el, i) => {
     el.classList.toggle('on', mode !== 'off');
-    el.classList.toggle('rim', mode !== 'off');
     el.classList.toggle('legacyorder', ui.legacyorder.checked);
+    el.classList.toggle('shadow', ui.shadow.checked);
     el.style.setProperty('--b', ui.blur.value + 'px');
     el.style.setProperty('--sat', ui.sat.value);
-    el.style.setProperty('--rim', ui.rim.value);
-    el.style.setProperty('--lightdir', ui.lightdir.value + 'deg');
-    if (mode === 'off') { el.style.removeProperty('--glass'); return; }
+    el.style.setProperty('--tint', ui.tint.value);
+    el.style.setProperty('--ish', ui.ish.value);
+    if (mode === 'off') { el.style.clipPath = ''; return; }
 
     const r = el.getBoundingClientRect();
+    const rad = radiusOf(el);
+    const o = opts(rad);
+
     el.style.clipPath = ui.clip.checked
-      ? LiquidGlassMaps.squirclePath(r.width, r.height, radiusOf(el), +ui.superness.value)
+      ? LiquidGlassMaps.squirclePath(r.width, r.height, rad, o.superness)
       : '';
-    const id = 'lab-glass-' + i;
-    let href, scale;
 
+    const id = 'lab-lens-' + i;
     if (mode === 'sdf') {
-      const built = LiquidGlassMaps.buildSet(r.width, r.height,
-        Object.assign({}, o, { radius: radiusOf(el) }));
-      href = built.urls;
-      scale = built.scale;
-      window.__lastScale = scale;
-      if (i === 0) {
-        const mv = document.getElementById('mapview');
-        mv.width = built.preview.width; mv.height = built.preview.height;
-        mv.getContext('2d').drawImage(built.preview, 0, 0);
-      }
+      const built = LiquidGlassMaps.buildDisplacement(r.width, r.height, o);
+      defs.appendChild(buildFilter(id, built.urls, built.scale));
+      const hl = LiquidGlassMaps.buildHighlight(r.width, r.height, o);
+      el.style.setProperty('--hl', `url(${hl})`);
+      if (i === 0) preview(built.preview, hl);
     } else {
-      const built = LiquidGlassMaps.reactbits(r.width, r.height, { radius: radiusOf(el) });
-      href = [built.url];
-      scale = -80;   // Liquify's distortionScale
+      const built = LiquidGlassMaps.reactbits(r.width, r.height, { radius: rad });
+      defs.appendChild(buildFilter(id, [built.url], built.scale));
+      el.style.setProperty('--hl', 'none');
     }
-
-    defs.appendChild(buildFilter(id, href, scale));
-    el.style.setProperty('--glass', `url(#${id})`);
+    el.style.setProperty('--lens', `url(#${id})`);
   });
+}
+
+function preview(mapCanvas, hlUrl) {
+  const mv = document.getElementById('mapview');
+  mv.width = mapCanvas.width; mv.height = mapCanvas.height;
+  mv.getContext('2d').drawImage(mapCanvas, 0, 0);
+  const hv = document.getElementById('hlview');
+  const im = new Image();
+  im.onload = () => {
+    hv.width = im.width; hv.height = im.height;
+    const c = hv.getContext('2d');
+    c.fillStyle = '#000'; c.fillRect(0, 0, hv.width, hv.height);
+    c.drawImage(im, 0, 0);
+  };
+  im.src = hlUrl;
 }
 
 /* ---- backdrops ---------------------------------------------------------- */
@@ -259,7 +272,6 @@ function drawBackdrop() {
   const kind = ui.bgmode.value;
 
   if (kind === 'grid') {
-    c.fillStyle = '#101014'; c.fillRect(0, 0, W, H);
     const s = 24 * dpr;
     for (let y = 0; y < H; y += s) for (let x = 0; x < W; x += s) {
       c.fillStyle = ((x / s + y / s) & 1) ? '#f5f5f7' : '#1b1b20';
@@ -280,12 +292,9 @@ function drawBackdrop() {
     return;
   }
 
-  // synthetic album art: big soft colour fields plus hard edges, which is what
-  // makes refraction readable
   const g = c.createLinearGradient(0, 0, W, H);
   g.addColorStop(0, '#2a1b4d'); g.addColorStop(.5, '#7a2d5c'); g.addColorStop(1, '#0d2b3e');
   c.fillStyle = g; c.fillRect(0, 0, W, H);
-
   const blobs = [
     [0.22, 0.30, 0.30, '#ff5f6d'], [0.72, 0.24, 0.26, '#ffc371'],
     [0.55, 0.72, 0.34, '#22d3ee'], [0.12, 0.80, 0.22, '#a78bfa'],
@@ -315,16 +324,54 @@ function syncOutputs() {
     if (o) o.value = ui[id].value;
   }
 }
-
-for (const id of RANGES.concat(['profile','mode','physical','legacyorder','clip'])) {
+for (const id of RANGES.concat(CHECKS, ['mode'])) {
   ui[id].addEventListener('input', () => { syncOutputs(); rebuild(); });
 }
 ui.bgmode.addEventListener('input', drawBackdrop);
 addEventListener('resize', () => { drawBackdrop(); rebuild(); });
+addEventListener('keydown', e => {
+  if (e.key === 'h') { ui.hideui.checked = !ui.hideui.checked; rebuild(); }
+  if (e.key === 'c') { ui.mode.value = ui.mode.value === 'sdf' ? 'reactbits' : 'sdf'; rebuild(); }
+});
+
+const PRESETS = {
+  // large, mostly transparent sheet: light blur, strong edge, faint body
+  clear:   { height: 40, amount: 55, superness: 4, gradInflate: 1.5, depthEffect: 0, dispersion: 0.12,
+             blur: 9, sat: 1.6, tint: 0.05, ish: 0.10,
+             hlAngle: 45, hlFalloff: 1, hlAlpha: 0.5, hlWidth: 2, hlBlur: 2.5 },
+  // small controls: heavier blur, more body
+  regular: { height: 24, amount: 32, superness: 4, gradInflate: 1.5, depthEffect: 0, dispersion: 0.2,
+             blur: 22, sat: 1.8, tint: 0.14, ish: 0.22,
+             hlAngle: 45, hlFalloff: 1, hlAlpha: 0.55, hlWidth: 1.5, hlBlur: 1.5 },
+};
+function applyPreset() {
+  const p = PRESETS[document.getElementById('preset').value];
+  for (const k in p) if (ui[k]) ui[k].value = p[k];
+  syncOutputs(); rebuild();
+}
+function applyScene() {
+  const sheet = document.getElementById('scene').value === 'sheet';
+  document.getElementById('p0').style.display = sheet ? '' : 'none';
+  for (const id of ['p1','p2','p3','p4','p5']) document.getElementById(id).style.display = sheet ? 'none' : '';
+  rebuild();
+}
+document.getElementById('preset').addEventListener('input', applyPreset);
+document.getElementById('scene').addEventListener('input', applyScene);
+
+// fake notification rows inside the sheet
+{
+  const sheet = document.getElementById('p0');
+  for (let i = 0; i < 5; i++) {
+    const d = document.createElement('div');
+    d.className = 'row'; d.style.top = (26 + i * 90) + 'px';
+    sheet.appendChild(d);
+  }
+}
 
 syncOutputs();
 drawBackdrop();
-rebuild();
+applyScene();
+applyPreset();
 </script>
 </body>
 </html>
