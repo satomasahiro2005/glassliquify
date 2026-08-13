@@ -948,6 +948,7 @@
     if (el.__lgFloat === key && el.style.clipPath) return;
     el.__lgFloat = key;
 
+    remember(el);
     el.setAttribute(FLOAT_ATTR, '');
     if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
     var id = lensFilter(r.width, r.height, radius);
@@ -1170,25 +1171,35 @@
       document.querySelectorAll('[data-liquify-lg],[data-liquify-lg-plain]').forEach(function (el) {
         el.removeAttribute('data-liquify-lg');
         el.removeAttribute('data-liquify-lg-plain');
-        el.style.removeProperty('border-radius');
-        el.style.removeProperty('clip-path');
-        el.style.removeProperty('box-shadow');
-        el.style.removeProperty('border-color');
-        el.style.removeProperty('backdrop-filter');
-        el.style.removeProperty('-webkit-backdrop-filter');
         el.__lgRadius = null;
+        restore(el);
       });
+      /* Every corner the sweep clipped, put back. These are the app's own
+       * boxes, not surfaces of ours, so nothing else would ever clear them. */
+      for (var s = 0; s < swept.length; s++) {
+        swept[s].__lgCorner = null;
+        swept[s].style.removeProperty('clip-path');
+      }
+      swept = [];
+      document.documentElement.classList.remove('liquify-lg-wall');
+      document.documentElement.classList.remove('liquify-cinema');
       document.querySelectorAll('[' + FLOAT_ATTR + ']').forEach(function (el) {
         el.removeAttribute(FLOAT_ATTR);
         el.__lgFloat = null;
-        ['backdrop-filter', '-webkit-backdrop-filter', 'clip-path', 'position',
-         '--lg-ring', '--lg-rim', '--lg-rim-floor', '--lg-angle'].forEach(function (p) {
+        ['--lg-ring', '--lg-rim', '--lg-rim-floor', '--lg-angle'].forEach(function (p) {
           el.style.removeProperty(p);
         });
+        restore(el);
       });
     }
     if (!quiet) flash(enabled ? 'liquid glass: ON' : 'liquid glass: OFF (Liquify 標準)');
-    if (enabled) { rescan(); render(true); }
+    /* The backdrop is rebuilt on the way back in. It is only refreshed on a
+     * track change or a resize, and both can happen while this is off - the
+     * window was resized with the toggle down and every surface came back
+     * drawing a texture that no longer matched, which looks exactly like
+     * nothing being drawn at all. It also puts back the wall class, which
+     * turning off removes. */
+    if (enabled) { rescan(); refreshBackdrop(); render(true); }
   }
 
   /* Selector matching is the expensive part, so it runs on a timer; the rects
@@ -1286,6 +1297,11 @@
   }
 
   function rescan() {
+    /* Nothing runs while the toggle is off. The corner sweep kept going and
+     * kept clipping the app's boxes to superellipses, so "off" was Liquify
+     * with our corners on it - not the theme, and not a comparison worth
+     * anything. */
+    if (!enabled) return;
     var out = [];
     for (var i = 0; i < TARGETS.length && out.length < MAX_ELEMENTS; i++) {
       var t = TARGETS[i];
@@ -1343,6 +1359,40 @@
    * a scroll, a resize, a rescan, or the slow safety tick. */
   function markDirty() { dirty = true; }
 
+  /* Liquify writes its glass onto the elements themselves, inline. Taking a
+   * surface over means overwriting that, and letting it go used to mean
+   * removeProperty - which deletes the theme's value, not ours. Turning the
+   * toggle off then left the app with no glass at all: neither this nor
+   * Liquify, which is exactly what "off" must not be.
+   *
+   * So the inline declarations are copied before the first write and put back
+   * verbatim, priority included. */
+  var TAKEOVER_PROPS = [
+    'backdrop-filter', '-webkit-backdrop-filter', 'box-shadow', 'border-color',
+    'border-radius', 'clip-path', 'position', 'background-color', 'background-image',
+  ];
+
+  function remember(el) {
+    if (el.__lgPrev) return;
+    var prev = {};
+    for (var i = 0; i < TAKEOVER_PROPS.length; i++) {
+      var p = TAKEOVER_PROPS[i];
+      prev[p] = [el.style.getPropertyValue(p), el.style.getPropertyPriority(p)];
+    }
+    el.__lgPrev = prev;
+  }
+
+  function restore(el) {
+    var prev = el.__lgPrev;
+    if (!prev) return;
+    el.__lgPrev = null;
+    for (var i = 0; i < TAKEOVER_PROPS.length; i++) {
+      var p = TAKEOVER_PROPS[i];
+      el.style.removeProperty(p);
+      if (prev[p] && prev[p][0]) el.style.setProperty(p, prev[p][0], prev[p][1]);
+    }
+  }
+
   /* One corner for the whole app, and it is whatever the knob says. Clamping
    * per element - to half its height, or to a third of it - is what stopped
    * the radius being uniform: a column kept the full curve while a shortcut
@@ -1366,6 +1416,7 @@
     var r = el.getBoundingClientRect();
     if (r.width < 4 || r.height < 4) return;
     if (!el.hasAttribute('data-liquify-lg')) {
+      remember(el);
       el.setAttribute('data-liquify-lg', '');
       el.style.setProperty('box-shadow', 'none', 'important');
       el.style.setProperty('border-color', 'transparent', 'important');
@@ -1398,18 +1449,12 @@
      * and the shortcut tiles ended up with no outline at all. */
     if (m.el.hasAttribute && m.el.hasAttribute('data-liquify-lg-plain')) {
       m.el.removeAttribute('data-liquify-lg-plain');
-      m.el.style.removeProperty('backdrop-filter');
-      m.el.style.removeProperty('-webkit-backdrop-filter');
+      restore(m.el);
     }
     if (m.el.hasAttribute && m.el.hasAttribute('data-liquify-lg')) {
       m.el.removeAttribute('data-liquify-lg');
-      m.el.style.removeProperty('border-radius');
-      m.el.style.removeProperty('clip-path');
       m.el.__lgRadius = null;
-      m.el.style.removeProperty('backdrop-filter');
-      m.el.style.removeProperty('-webkit-backdrop-filter');
-      m.el.style.removeProperty('box-shadow');
-      m.el.style.removeProperty('border-color');
+      restore(m.el);
       /* Corners are owned by the sweep, not by the draw pass. Clearing the
        * clip here fought it: the sheet lost its superellipse every frame it
        * was not drawn and got it back on the next sweep. */
@@ -1531,6 +1576,7 @@
     for (i = 0; i < list.length; i++) {
       var it = list[i], mm = it.m, rr = it.r;
       if (!mm.el.hasAttribute('data-liquify-lg')) {
+        remember(mm.el);
         mm.el.setAttribute('data-liquify-lg', '');
         /* Some of these carry their outline with !important from the theme's
          * own stylesheet, which a stylesheet rule cannot beat. Inline
