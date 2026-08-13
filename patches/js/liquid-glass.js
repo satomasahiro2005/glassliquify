@@ -383,7 +383,12 @@
    * then copy the touched rectangle into `sample` before the next quad reads
    * it. GL cannot read and write one texture in a single draw. */
   function Renderer(canvas) {
-    var gl = canvas.getContext('webgl2', { premultipliedAlpha: true, alpha: true });
+    /* No multisampling. Every edge this draws is interior to a fullscreen
+     * quad - the shape comes from the SDF's own coverage, not from geometry -
+     * so MSAA has nothing to antialias and only costs a resolve on every
+     * present. The pixels are identical without it. */
+    var gl = canvas.getContext('webgl2',
+      { premultipliedAlpha: true, alpha: true, antialias: false });
     if (!gl) throw new Error('WebGL2 unavailable');
     this.gl = gl;
     this.prog = link(gl, VERT, FRAG);
@@ -1933,7 +1938,26 @@
         if (coverUrl() !== currentUrl) refreshBackdrop();
       });
     }
-    window.addEventListener('resize', function () { refreshBackdrop(); });
+    /* Debounced, and with a trailing run.
+     *
+     * Rebuilding the backdrop is two full-window canvases, a getImageData
+     * readback and two full-window texture uploads - tens of megabytes on the
+     * main thread. Firing that on every resize event during a drag is a stall
+     * per event, and refreshBackdrop's own `pending` guard made it worse than
+     * slow: an event arriving mid-flight was dropped without being queued, so
+     * the last size of a drag could be missed entirely and the wallpaper was
+     * left built for a size the window no longer has. It stretches by uv, so
+     * it reads as a subtly wrong scale until the next track change.
+     *
+     * One rebuild, after the drag stops. */
+    var resizeTimer = null;
+    window.addEventListener('resize', function () {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(function () {
+        resizeTimer = null;
+        refreshBackdrop();
+      }, 200);
+    });
 
     rescan();
     collectScrollNodes();
