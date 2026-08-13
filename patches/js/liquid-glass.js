@@ -20,9 +20,20 @@
   /* Every surface Liquify puts glass on, generated from its GLASS_TARGETS by
    * tools/gen-targets.py. Some of these sit over scrolling content, where the
    * canvas shows the wallpaper instead of what is really behind - that is
-   * expected for now and gets trimmed once we can see which ones break. */
-  var TARGETS = (window.__liquifyGlassTargets || [{ s: '.Root__now-playing-bar', r: 20 }])
-    .map(function (t) { return { selector: t.s, radius: t.r, ca: t.ca !== false }; });
+   * expected for now and gets trimmed once we can see which ones break.
+   *
+   * Resolved inside start(), not at module scope: both files are deferred and
+   * this one runs first, so at module scope the global is not there yet and we
+   * would silently fall back to a single selector. */
+  var TARGETS = [];
+
+  function resolveTargets() {
+    var raw = window.__liquifyGlassTargets;
+    if (!raw || !raw.length) raw = [{ s: '.Root__now-playing-bar', r: 20 }];
+    TARGETS = raw.map(function (t) {
+      return { selector: t.s, radius: t.r, ca: t.ca !== false };
+    });
+  }
 
   var MAX_ELEMENTS = 400;   // backstop; drawing is cheap, layout reads are not
 
@@ -314,7 +325,25 @@
 
   // ---- wiring -------------------------------------------------------------
 
-  var canvas, renderer, currentUrl = null, pending = false;
+  var canvas, renderer, currentUrl = null, pending = false, haveBackdrop = null;
+
+  /* The wallpaper can be rebuilt; the app's own content cannot. A surface only
+   * qualifies while nothing sits between it and the wallpaper, so the test is
+   * against the current layout rather than against a list of selectors. That
+   * way the floating-player layout, a Spotify layout change and any unexpected
+   * overlay all fail through the same check. */
+  var BLOCKERS = ['.Root__main-view', '.Root__nav-bar', '.Root__right-sidebar'];
+
+  function backdropIsKnown(rect) {
+    for (var i = 0; i < BLOCKERS.length; i++) {
+      var b = document.querySelector(BLOCKERS[i]);
+      if (!b) continue;
+      var q = b.getBoundingClientRect();
+      if (rect.left < q.right - 1 && q.left < rect.right - 1 &&
+          rect.top < q.bottom - 1 && q.top < rect.bottom - 1) return false;
+    }
+    return true;
+  }
 
   function ensureCanvas() {
     if (canvas) return canvas;
@@ -328,24 +357,64 @@
     return canvas;
   }
 
-  function ensureStyle() {
-    if (document.getElementById('liquify-lg-style')) return;
-    var st = document.createElement('style');
+  /* The style is what actually hands the surfaces over, so adding and removing
+   * it is the on/off switch: with it gone, Liquify's own backdrop-filter is
+   * back and nothing of ours is visible. */
+  function setStyle(on) {
+    var st = document.getElementById('liquify-lg-style');
+    if (!on) { if (st) st.remove(); return; }
+    if (st) return;
+    st = document.createElement('style');
     st.id = 'liquify-lg-style';
-    var sels = TARGETS.map(function (t) { return t.selector; }).join(',');
-    // hand the surfaces over: drop Liquify's backdrop-filter and lift the
-    // elements above the canvas so their own content still draws on top
+    // scoped to the attribute, not to the selectors: only the surfaces that
+    // pass backdropIsKnown() are handed over, everything else keeps Liquify's
+    // own glass. z-index lifts them above the canvas so their content still
+    // draws on top of the refraction.
     st.textContent =
-      ':is(' + sels + '){backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
-      'background-color:transparent!important;}' +
-      ':is(' + sels + ')::before{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;}' +
+      '[data-liquify-lg]{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
+      'background-color:transparent!important;position:relative;z-index:2;}' +
+      '[data-liquify-lg]::before{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;}' +
       '#liquify-lg-canvas{z-index:1;}';
     document.head.appendChild(st);
+  }
+
+  var enabled = localStorage.getItem('liquify-lg') !== 'off';
+
+  function flash(text) {
+    var el = document.getElementById('liquify-lg-toast');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'liquify-lg-toast';
+      el.style.cssText =
+        'position:fixed;left:50%;top:24px;transform:translateX(-50%);z-index:99999;' +
+        'padding:8px 16px;border-radius:999px;background:rgba(0,0,0,.78);color:#fff;' +
+        'font:600 13px ui-sans-serif,system-ui;pointer-events:none;transition:opacity .25s;';
+      document.body.appendChild(el);
+    }
+    el.textContent = text;
+    el.style.opacity = '1';
+    clearTimeout(el._t);
+    el._t = setTimeout(function () { el.style.opacity = '0'; }, 1100);
+  }
+
+  function setEnabled(on, quiet) {
+    enabled = !!on;
+    localStorage.setItem('liquify-lg', enabled ? 'on' : 'off');
+    setStyle(enabled);
+    if (canvas) canvas.style.display = enabled ? '' : 'none';
+    if (!enabled) {
+      document.querySelectorAll('[data-liquify-lg]').forEach(function (el) {
+        el.removeAttribute('data-liquify-lg');
+      });
+    }
+    if (!quiet) flash(enabled ? 'liquid glass: ON' : 'liquid glass: OFF (Liquify 標準)');
+    if (enabled) { rescan(); render(); }
   }
 
   /* Selector matching is the expensive part, so it runs on a timer; the rects
    * are re-read every frame because scrolling moves them. */
   var matched = [];
+  var drawn = 0;
 
   function rescan() {
     var out = [];
@@ -368,16 +437,27 @@
     if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
 
     renderer.begin();
+    drawn = 0;
     for (var i = 0; i < matched.length; i++) {
       var m = matched[i];
-      if (!m.el.isConnected) continue;
+      if (!m.el.isConnected) { continue; }
       var r = m.el.getBoundingClientRect();
-      if (r.width < 2 || r.height < 2) continue;
-      if (r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth) continue;
+      var ok = r.width >= 2 && r.height >= 2 &&
+               r.bottom > 0 && r.top < window.innerHeight &&
+               r.right > 0 && r.left < window.innerWidth &&
+               backdropIsKnown(r);
+
+      var cs = getComputedStyle(m.el);
+      if (ok && (cs.visibility === 'hidden' || cs.display === 'none' || +cs.opacity === 0)) ok = false;
+
+      if (!ok) {
+        if (m.el.hasAttribute('data-liquify-lg')) m.el.removeAttribute('data-liquify-lg');
+        continue;
+      }
+      if (!m.el.hasAttribute('data-liquify-lg')) m.el.setAttribute('data-liquify-lg', '');
+      drawn++;
 
       var radius = m.t.radius;
-      var cs = getComputedStyle(m.el);
-      if (cs.visibility === 'hidden' || cs.display === 'none' || +cs.opacity === 0) continue;
       var cssR = parseFloat(cs.borderTopLeftRadius);
       if (!isNaN(cssR) && cssR > 0) radius = cssR;
 
@@ -398,29 +478,51 @@
   }
 
   function loop() {
-    render();
+    if (enabled) render();
     requestAnimationFrame(loop);
   }
+
+  /* The backdrop is only valid once the cover has actually decoded. Building it
+   * from a null image gives a flat #1c1c22 fill, which then gets refracted
+   * instead of the wallpaper - it looks like a black box, not like a bug, so it
+   * is worth being strict here and retrying until an image really arrives. */
+  var retry = null;
 
   function refreshBackdrop() {
     if (pending) return;
     pending = true;
+    if (retry) { clearTimeout(retry); retry = null; }
+
     var url = coverUrl();
     var dpr = window.devicePixelRatio || 1;
     var W = Math.round(window.innerWidth * dpr);
     var H = Math.round(window.innerHeight * dpr);
+
     Promise.resolve(url ? loadImage(url) : null).then(function (img) {
       pending = false;
+      if (!img) {
+        // no cover yet (startup) or the load failed - keep whatever we had and
+        // come back for it rather than baking the fallback fill in
+        if (!haveBackdrop) {
+          renderer.setBackdrop(buildBackdropCanvas(null, W, H));
+          haveBackdrop = 'fallback';
+        }
+        retry = setTimeout(refreshBackdrop, 1000);
+        return;
+      }
       currentUrl = url;
+      haveBackdrop = 'cover';
       renderer.setBackdrop(buildBackdropCanvas(img, W, H));
       render();
     });
   }
 
   function start() {
+    resolveTargets();
     try {
       ensureCanvas();
-      ensureStyle();
+      setStyle(enabled);
+      if (canvas) canvas.style.display = enabled ? '' : 'none';
     } catch (e) {
       console.warn(LOG, 'disabled:', e && e.message);
       return;
@@ -438,12 +540,26 @@
     setInterval(rescan, 400);
     requestAnimationFrame(loop);
 
+    // Ctrl+Shift+G flips between this and Liquify's own glass, so the two can
+    // be compared without a restart.
+    window.addEventListener('keydown', function (e) {
+      if (e.ctrlKey && e.shiftKey && (e.key === 'G' || e.key === 'g')) {
+        e.preventDefault();
+        setEnabled(!enabled);
+      }
+    }, true);
+
     window.liquifyLG = {
       render: render, refresh: refreshBackdrop, rescan: rescan,
       defaults: DEFAULTS, targets: TARGETS,
-      count: function () { return matched.length; },
+      count: function () { return { matched: matched.length, drawn: drawn }; },
+      toggle: function () { setEnabled(!enabled); return enabled; },
+      on: function () { setEnabled(true); },
+      off: function () { setEnabled(false); },
+      get enabled() { return enabled; },
+      set: function (patch) { Object.assign(DEFAULTS, patch); render(); return DEFAULTS; },
     };
-    console.log(LOG, 'ready:', TARGETS.length, 'selectors');
+    console.log(LOG, 'ready:', TARGETS.length, 'selectors, enabled =', enabled);
   }
 
   function waitForSpicetify() {

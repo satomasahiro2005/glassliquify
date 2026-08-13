@@ -25,8 +25,11 @@ $jsDir = Join-Path $root 'patches\js'
 if (Test-Path $jsDir) {
     $extDir = Join-Path $env:APPDATA 'spicetify\Extensions'
     New-Item -ItemType Directory -Path $extDir -Force | Out-Null
+    # generated data files first: the consumers read their globals at startup
     $names = @()
-    foreach ($f in (Get-ChildItem $jsDir -Filter '*.js' -File)) {
+    $files = Get-ChildItem $jsDir -Filter '*.js' -File |
+             Sort-Object @{ Expression = { if ($_.Name -like '*.generated.js') { 0 } else { 1 } } }, Name
+    foreach ($f in $files) {
         Copy-Item $f.FullName (Join-Path $extDir $f.Name) -Force
         $names += $f.Name
         Write-Host "  extension: $($f.Name)"
