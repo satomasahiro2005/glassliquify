@@ -1372,6 +1372,7 @@
      * the filter was quietly taking two thirds of the app's panels with it. */
     matched = out;
     sweepThemeGlass();
+    collectScrollNodes();
     sig = '';       // force one redraw after a rescan
     dirty = true;
   }
@@ -1791,8 +1792,48 @@
     }
   }
 
+  /* Scroll position is read here rather than waited for.
+   *
+   * Spotify's panes scroll on the compositor, so the content has already moved
+   * by the time the scroll event reaches this thread: measured, the event that
+   * precedes a frame arrives a median of 19.9ms before it - more than a frame.
+   * Marking dirty from the event and drawing on the next rAF therefore always
+   * drew the previous frame's position, and the glass trailed its own panel.
+   *
+   * scrollTop on a handful of scrollers is a few property reads, and it is the
+   * value the compositor is showing right now, so the frame that notices the
+   * movement is the frame that draws it. The event listener stays for the
+   * cases this misses - a scroller that appears mid-gesture, a nested one. */
+  var scrollNodes = [];
+  var scrollSig = '';
+
+  function collectScrollNodes() {
+    scrollNodes = [];
+    var roots = document.querySelectorAll(
+      '.Root__main-view, .Root__nav-bar, .Root__right-sidebar');
+    for (var i = 0; i < roots.length; i++) {
+      var inner = roots[i].querySelectorAll('*');
+      for (var j = 0; j < inner.length && scrollNodes.length < 12; j++) {
+        var e = inner[j];
+        if (e.scrollHeight > e.clientHeight + 8 && e.clientHeight > 120) {
+          scrollNodes.push(e);
+          break;                       // the pane's own scroller, not its rows
+        }
+      }
+    }
+  }
+
   function loop() {
-    if (enabled) render(false);
+    if (enabled) {
+      var s = '';
+      for (var i = 0; i < scrollNodes.length; i++) {
+        var n = scrollNodes[i];
+        if (!n.isConnected) { collectScrollNodes(); break; }
+        s += n.scrollTop + ',' + n.scrollLeft + '|';
+      }
+      if (s !== scrollSig) { scrollSig = s; dirty = true; }
+      render(false);
+    }
     requestAnimationFrame(loop);
   }
 
@@ -1868,6 +1909,7 @@
     window.addEventListener('resize', function () { refreshBackdrop(); });
 
     rescan();
+    collectScrollNodes();
     scheduleRescan();
 
     // anything that can move a surface without a rescan
@@ -1922,7 +1964,9 @@
       render: function () { render(true); }, refresh: refreshBackdrop, rescan: rescan,
       testBackdrop: testBackdrop, renderer: renderer,
       defaults: DEFAULTS, targets: TARGETS,
-      count: function () { return { matched: matched.length, drawn: drawn }; },
+      count: function () {
+        return { matched: matched.length, drawn: drawn, scrollers: scrollNodes.length };
+      },
       toggle: function () { setEnabled(!enabled); return enabled; },
       on: function () { setEnabled(true); },
       off: function () { setEnabled(false); },

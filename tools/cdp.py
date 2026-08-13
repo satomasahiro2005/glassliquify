@@ -35,7 +35,7 @@ class Session:
         url, self.page = page_ws()
         # Chrome 111+ rejects the handshake if an Origin header is present and
         # --remote-allow-origins was not passed. Just do not send one.
-        self.ws = websocket.create_connection(url, timeout=30, suppress_origin=True)
+        self.ws = websocket.create_connection(url, timeout=90, suppress_origin=True)
         self.id = 0
 
     def send(self, method, **params):
