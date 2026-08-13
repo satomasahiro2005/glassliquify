@@ -84,6 +84,7 @@
     hlAlpha: 0.5,
     hlWidth: 1.5,
     hlFloor: 0.35,
+    roundChildren: true,
   };
 
   // ---- shaders ------------------------------------------------------------
@@ -714,6 +715,16 @@
       'background-image:none!important;background-color:transparent!important;}' +
       ':is(' + sels + ')::before,:is(' + sels + ')::after{' +
       'backdrop-filter:none!important;-webkit-backdrop-filter:none!important;}' +
+      /* On the surfaces we actually draw, the frame comes from the shader, so
+       * every outline the theme puts on the element's own circular
+       * border-radius has to go - including the ones on its pseudo elements.
+       * Leaving those draws a second arc beside the superellipse: the curves
+       * lie on top of each other along the straight edges and separate at the
+       * corner, which is exactly the doubled corner. */
+      '[data-liquify-lg]{border-color:transparent!important;box-shadow:none!important;' +
+      'outline:none!important;}' +
+      '[data-liquify-lg]::before,[data-liquify-lg]::after{box-shadow:none!important;' +
+      'border-color:transparent!important;background:none!important;}' +
       /* the canvas draws the wallpaper, so the theme's own layers would double it */
       '.liquify-bg-layer,.liquify-animated-bg{display:none!important;}' +
       /* The lens bends the wallpaper's detail, so the wallpaper must not be
@@ -847,6 +858,8 @@
   function drop(m) {
     if (m.el.hasAttribute && m.el.hasAttribute('data-liquify-lg')) {
       m.el.removeAttribute('data-liquify-lg');
+      m.el.style.removeProperty('box-shadow');
+      m.el.style.removeProperty('border-color');
       m.el.style.clipPath = '';
       m.el.__lgClip = null;
     }
@@ -886,12 +899,24 @@
     drawn = 0;
     for (i = 0; i < list.length; i++) {
       var it = list[i], mm = it.m, rr = it.r;
-      if (!mm.el.hasAttribute('data-liquify-lg')) mm.el.setAttribute('data-liquify-lg', '');
+      if (!mm.el.hasAttribute('data-liquify-lg')) {
+        mm.el.setAttribute('data-liquify-lg', '');
+        /* Some of these carry their outline with !important from the theme's
+         * own stylesheet, which a stylesheet rule cannot beat. Inline
+         * !important can. The search field is the one that needs it. */
+        mm.el.style.setProperty('box-shadow', 'none', 'important');
+        mm.el.style.setProperty('border-color', 'transparent', 'important');
+      }
+      if (mm.el.style.clipPath) { mm.el.style.clipPath = ''; mm.el.__lgClip = null; }
       drawn++;
 
       var minDim = Math.min(rr.width, rr.height);
       var radius = Math.min(mm.radius, minDim / 2);
-      applySquircle(mm.el, rr.width, rr.height, radius, DEFAULTS.superness);
+      /* No clip-path. The element is transparent and the frame is drawn by the
+       * shader, so clipping buys nothing - and the polygon approximates the
+       * superellipse with 16 straight segments per corner, which does not lie
+       * exactly on the shader's smooth SDF. The two curves a pixel apart are
+       * the doubled corner. */
 
       // a full-size lens on a small chip looks wrong; scale it to what fits
       var scale = Math.min(1, minDim / 96);
@@ -922,9 +947,35 @@
       renderer.draw(rect, opts);
       // hand this surface to whatever is drawn on top of it
       renderer.commit(rect, DEFAULTS.amount * dpr + 2);
+      if (DEFAULTS.roundChildren) roundChildren(mm.el, DEFAULTS.superness);
     }
     renderer.scissor(null);
     renderer.end();
+  }
+
+  /* Everything else in view keeps a circular border-radius, which reads as a
+   * different corner sitting next to the superellipse ones. Give the rounded
+   * children the same curve. Only inside surfaces we drew, only above a radius
+   * where the difference is visible, and re-applied when the size changes. */
+  var CORNER_MIN = 8;
+
+  function roundChildren(host, n) {
+    var kids = host.querySelectorAll('*');
+    for (var i = 0; i < kids.length && i < 60; i++) {
+      var k = kids[i];
+      if (k.hasAttribute('data-liquify-lg')) continue;
+      var cs = getComputedStyle(k);
+      var r = parseFloat(cs.borderTopLeftRadius);
+      if (isNaN(r) || r < CORNER_MIN) continue;
+      if (cs.borderTopLeftRadius !== cs.borderBottomRightRadius) continue;   // pills, circles
+      var rect = k.getBoundingClientRect();
+      if (rect.width < 24 || rect.height < 24) continue;
+      if (r >= Math.min(rect.width, rect.height) / 2 - 0.5) continue;        // fully round
+      var key = (rect.width | 0) + 'x' + (rect.height | 0) + 'r' + (r | 0) + 'n' + n;
+      if (k.__lgCorner === key) continue;
+      k.__lgCorner = key;
+      k.style.clipPath = squirclePath(rect.width, rect.height, r, n);
+    }
   }
 
   function loop() {
