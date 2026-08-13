@@ -1231,13 +1231,11 @@
    * moves things without changing anything else. */
   function scrollClipOf(el) {
     for (var q = el.parentElement; q; q = q.parentElement) {
-      var cs = getComputedStyle(q);
       /* Only boxes that hard-clip. A scroller's rect is not where its content
        * visually ends - the browser already draws the element where it draws
        * it, and cutting again at the scroller's edge slices the sheet across
        * the middle of a panel while its text carries on below. */
-      var o = cs.overflow + cs.overflowX + cs.overflowY;
-      if (o.indexOf('hidden') >= 0 || o.indexOf('clip') >= 0) return q;
+      if (nodeStyle(q).clips) return q;
       if (q === document.documentElement) break;
     }
     return null;
@@ -1538,6 +1536,35 @@
    * Now each node is read once and the chains meet in the cache. */
   var opCache = null;
 
+  /* One style read per node per frame, shared by the two ancestor walks.
+   *
+   * scrollClipOf and the draw loop's bounds walk climb largely the same chains
+   * for every surface, so between them they resolved computed style on the
+   * same few hundred nodes about thirteen hundred times a frame - the shape
+   * that cost 13.9ms before the opacity walk was memoised.
+   *
+   * Only the style-derived answers are cached, and only for this frame. The
+   * attribute half of the bounds test is read live every time: it is set
+   * inside the draw loop, and folding it into the cache is what made an
+   * earlier attempt change which surfaces were drawn. */
+  var styleMemo = null;
+
+  function nodeStyle(el) {
+    var m = styleMemo && styleMemo.get(el);
+    if (m) return m;
+    var cs = getComputedStyle(el);
+    var o = cs.overflow + cs.overflowX + cs.overflowY;
+    m = {
+      clips: o.indexOf('hidden') >= 0 || o.indexOf('clip') >= 0,
+      boundsByStyle: cs.overflow !== 'visible' || cs.overflowX !== 'visible' ||
+                     cs.overflowY !== 'visible' ||
+                     parseFloat(cs.borderTopWidth) > 0 ||
+                     (cs.boxShadow && cs.boxShadow !== 'none'),
+    };
+    if (styleMemo) styleMemo.set(el, m);
+    return m;
+  }
+
   function effectiveOpacity(el) {
     var chain = [], o = null;
     for (var a = el, i = 0; a && i < 14; a = a.parentElement, i++) {
@@ -1604,6 +1631,7 @@
     /* One cache per frame. Styles can change between frames, so it cannot
      * outlive this pass. */
     opCache = new Map();
+    styleMemo = new Map();
     /* Floaters come and go with a click, so this rides the same dirty flag the
      * draw pass does rather than waiting for the next rescan. */
     styleFloaters();
@@ -1716,12 +1744,10 @@
       }
       for (var p2 = 0; p2 < ancestors.length; p2++) {
         var anc = ancestors[p2];
-        var acs = getComputedStyle(anc);
-        // only boxes that actually bound their children visually
-        var bounds = acs.overflow !== 'visible' || acs.overflowX !== 'visible' ||
-                     acs.overflowY !== 'visible' ||
-                     parseFloat(acs.borderTopWidth) > 0 ||
-                     (acs.boxShadow && acs.boxShadow !== 'none') ||
+        /* The attribute is read live, not memoised: the draw loop sets it as
+         * it goes, and caching it alongside the style changed which surfaces
+         * were drawn. */
+        var bounds = nodeStyle(anc).boundsByStyle ||
                      anc.hasAttribute('data-liquify-lg');
         if (!bounds) continue;
         var q = anc.getBoundingClientRect();
@@ -1765,6 +1791,7 @@
     renderer.scissor(null);
     renderer.end();
     opCache = null;
+    styleMemo = null;
   }
 
   /* Everything else in view keeps a circular border-radius, which reads as a
