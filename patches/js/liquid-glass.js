@@ -728,20 +728,19 @@
      * shadows stay - they are the frames that make the panels readable as
      * panels, and stripping them left the sections outline-less. */
     st.textContent =
-      /* Selector-wide, only the theme's blur comes off. Stripping backgrounds
-       * here too took out the carousel arrows on Home, whose visible pill is
-       * their background. The fill is dropped per surface below, on the ones we
-       * actually draw. */
-      ':is(' + sels + '){backdrop-filter:none!important;-webkit-backdrop-filter:none!important;}' +
-      ':is(' + sels + ')::before,:is(' + sels + ')::after{' +
-      'backdrop-filter:none!important;-webkit-backdrop-filter:none!important;}' +
+      /* Nothing selector-wide. Taking the theme's blur off every element that
+       * matches a target left the ones we do not draw - the carousel arrows are
+       * 32px, under the size we take over - with no glass and no fill at all:
+       * an icon floating on the wallpaper. Only the surfaces actually handed
+       * over lose the theme's treatment. */
       /* On the surfaces we actually draw, the frame comes from the shader, so
        * every outline the theme puts on the element's own circular
        * border-radius has to go - including the ones on its pseudo elements.
        * Leaving those draws a second arc beside the superellipse: the curves
        * lie on top of each other along the straight edges and separate at the
        * corner, which is exactly the doubled corner. */
-      '[data-liquify-lg]{border-color:transparent!important;box-shadow:none!important;' +
+      '[data-liquify-lg]{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
+      'border-color:transparent!important;box-shadow:none!important;' +
       'outline:none!important;background-image:none!important;' +
       'background-color:transparent!important;}' +
       '[data-liquify-lg]::before,[data-liquify-lg]::after{box-shadow:none!important;' +
@@ -819,6 +818,28 @@
     return null;
   }
 
+  /* The selector list is what the theme *declares*; what it actually paints can
+   * differ. Sweep for anything still carrying the theme's bulk filter and take
+   * the blur off it, if it is big enough that glass was the point. Small
+   * controls keep theirs - it is the only thing making them visible. */
+  function sweepThemeGlass() {
+    var all = document.querySelectorAll('.Root__top-container *');
+    for (var i = 0; i < all.length && i < 4000; i++) {
+      var el = all[i];
+      if (el.hasAttribute('data-liquify-lg')) continue;
+      var r = el.getBoundingClientRect();
+      if (Math.min(r.width, r.height) < MIN_GLASS_SIZE) continue;
+      var cs = getComputedStyle(el);
+      var bf = cs.backdropFilter || cs.webkitBackdropFilter || '';
+      if (bf === 'none' || bf.indexOf('blur') < 0) continue;
+      if (!el.hasAttribute('data-liquify-lg-plain')) {
+        el.setAttribute('data-liquify-lg-plain', '');
+        el.style.setProperty('backdrop-filter', 'none', 'important');
+        el.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
+      }
+    }
+  }
+
   function rescan() {
     var out = [];
     for (var i = 0; i < TARGETS.length && out.length < MAX_ELEMENTS; i++) {
@@ -873,6 +894,7 @@
       else out[m].el.setAttribute('data-liquify-lg-plain', '');
     }
     matched = kept;
+    sweepThemeGlass();
     sig = '';       // force one redraw after a rescan
     dirty = true;
   }
@@ -918,8 +940,22 @@
   }
 
   function drop(m) {
+    /* A surface we match but do not draw still has to lose the theme's blur if
+     * it is big enough to have been ours - otherwise half the sections are
+     * clear and half are frosted. Small controls keep their glass: it is the
+     * only thing making them visible. */
+    var r = m.el.getBoundingClientRect ? m.el.getBoundingClientRect() : null;
+    if (r && Math.min(r.width, r.height) >= MIN_GLASS_SIZE) {
+      if (!m.el.hasAttribute('data-liquify-lg-plain')) {
+        m.el.setAttribute('data-liquify-lg-plain', '');
+      }
+    } else if (m.el.hasAttribute('data-liquify-lg-plain')) {
+      m.el.removeAttribute('data-liquify-lg-plain');
+    }
     if (m.el.hasAttribute && m.el.hasAttribute('data-liquify-lg')) {
       m.el.removeAttribute('data-liquify-lg');
+      m.el.style.removeProperty('backdrop-filter');
+      m.el.style.removeProperty('-webkit-backdrop-filter');
       m.el.style.removeProperty('box-shadow');
       m.el.style.removeProperty('border-color');
       m.el.style.clipPath = '';
@@ -1010,6 +1046,8 @@
         /* Some of these carry their outline with !important from the theme's
          * own stylesheet, which a stylesheet rule cannot beat. Inline
          * !important can. The search field is the one that needs it. */
+        mm.el.style.setProperty('backdrop-filter', 'none', 'important');
+        mm.el.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
         mm.el.style.setProperty('box-shadow', 'none', 'important');
         mm.el.style.setProperty('border-color', 'transparent', 'important');
       }
@@ -1030,6 +1068,39 @@
         x: rr.left * dpr, y: rr.top * dpr, w: rr.width * dpr, h: rr.height * dpr,
         r: radius * dpr
       };
+
+      /* Clip to the parent surface as well as to the scroller. A section drawn
+       * inside another panel has a rim of its own, and without this it is drawn
+       * past the parent's edge - the frame pokes out through its container. */
+      var clipBox = it.c;
+      var ancestors = [];
+      for (var a = mm.el.parentElement; a; a = a.parentElement) {
+        ancestors.push(a);
+        if (a.classList && a.classList.contains('Root__top-container')) break;
+      }
+      for (var p2 = 0; p2 < ancestors.length; p2++) {
+        var anc = ancestors[p2];
+        var acs = getComputedStyle(anc);
+        // only boxes that actually bound their children visually
+        var bounds = acs.overflow !== 'visible' || acs.overflowX !== 'visible' ||
+                     acs.overflowY !== 'visible' ||
+                     parseFloat(acs.borderTopWidth) > 0 ||
+                     (acs.boxShadow && acs.boxShadow !== 'none') ||
+                     anc.hasAttribute('data-liquify-lg');
+        if (!bounds) continue;
+        var q = anc.getBoundingClientRect();
+        if (q.width < 4 || q.height < 4) continue;
+        clipBox = clipBox ? {
+          left: Math.max(clipBox.left, q.left), top: Math.max(clipBox.top, q.top),
+          right: Math.min(clipBox.right, q.right), bottom: Math.min(clipBox.bottom, q.bottom),
+        } : q;
+        clipBox = {
+          left: clipBox.left, top: clipBox.top,
+          right: clipBox.right, bottom: clipBox.bottom,
+          width: clipBox.right - clipBox.left, height: clipBox.bottom - clipBox.top,
+        };
+      }
+      it.c = clipBox;
 
       // glass must not spill out of the box that scrolls it
       renderer.scissor(it.c ? {

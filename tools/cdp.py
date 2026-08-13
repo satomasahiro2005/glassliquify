@@ -62,6 +62,10 @@ class Session:
             raise RuntimeError(desc)
         return r.get("result", {}).get("value")
 
+    def mouse(self, x, y):
+        """本物のポインタ移動。合成 MouseEvent では :hover が立たない。"""
+        self.send("Input.dispatchMouseEvent", type="mouseMoved", x=x, y=y, buttons=0)
+
     def screenshot(self, path):
         r = self.send("Page.captureScreenshot", format="png", captureBeyondViewport=False)
         with open(path, "wb") as f:
@@ -86,6 +90,9 @@ def main():
         out = s.evaluate(sys.argv[2])
     elif cmd == "evalfile":
         out = s.evaluate(open(sys.argv[2], encoding="utf-8").read())
+    elif cmd == "mouse":
+        s.mouse(float(sys.argv[2]), float(sys.argv[3]))
+        out = "moved to %s,%s" % (sys.argv[2], sys.argv[3])
     elif cmd == "shot":
         out = s.screenshot(sys.argv[2] if len(sys.argv) > 2 else "shot.png")
     else:

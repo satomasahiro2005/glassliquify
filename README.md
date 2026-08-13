@@ -1,57 +1,64 @@
 # glassliquify
 
-[Liquify](https://github.com/NMWplays/Liquify) のフォーク。テーマのガラスを、
-[Backdrop](https://github.com/Kyant0/AndroidLiquidGlass) の屈折・7タップ色収差・
-縁のハイライトを GLSL へ移植した WebGL 実装に置き換える。
+A fork of [Liquify](https://github.com/NMWplays/Liquify) that replaces the
+theme's glass with a WebGL port of [Backdrop](https://github.com/Kyant0/AndroidLiquidGlass)'s
+refraction, dispersion and highlight shaders.
 
-**Liquify 標準**
+**Liquify as it ships**
 
 ![before](docs/images/before.jpg)
 
-**このフォーク**
+**This fork**
 
 ![after](docs/images/after.jpg)
 
-`Ctrl+Shift+G` でこの2つを切り替えられる。
+`Ctrl+Shift+G` switches between the two at runtime.
 
 ---
 
-## 何を差し替えるのか
+## What it replaces
 
-Liquify のガラスは `backdrop-filter` と SVG の変位マップでできている。その変位
-マップは距離場ではなく box 全体にかかる線形グラデーションで、縁からの距離とは
-無関係に動く。縁が曲がるのではなく中身が平行移動する。
+Liquify's glass is a `backdrop-filter` driven by an SVG displacement map. That
+map is not a distance field: it is two linear gradients across the whole box, so
+the offset follows absolute x/y rather than the distance to the edge. The result
+is the backdrop sliding sideways rather than the rim bending.
 
-色収差も、チャンネルごとに `feDisplacementMap` の `scale` を変える作りになって
-いる。Chromium では `scale` が変わるとフィルタの副領域が変わり、チャンネル面が
-別々の画素に落ちる。**マップが完全に中立でも要素全面に 1px の RGB ずれが出る**
-（全画素 128 のマップで再現して確認した）。
+Its chromatic aberration gives each channel a different `scale` on
+`feDisplacementMap`. In Chromium a different scale changes the filter primitive
+subregion, so the three channel surfaces land on different pixels: **an element
+gets a 1px RGB split across its whole area even when the map is perfectly
+neutral.** Reproduced here with an all-128 map.
 
-このフォークは、背景がアルバムアート層だと分かっている面について、その背景を
-自前で組み直して WebGL で描く。壁紙を描いてから面を奥から手前へ1枚ずつ描き、
-描くたびにサンプル用テクスチャへ書き戻すので、カードは自分が乗っているパネルを
-屈折できる。
+This fork rebuilds the backdrop itself for the surfaces whose backdrop really is
+the album-art layer, and draws them in WebGL. The wallpaper is drawn first, then
+each surface back to front, copying what was drawn back into the sampled texture
+between quads — so a card refracts the panel it sits on rather than the
+wallpaper two layers down.
 
-- 屈折量は距離から直接 `circleMap(1 - (-sd)/height) * amount`。形（`height`）と
-  強さ（`amount`）が独立する
-- 色収差は 7 タップ（red/orange/yellow/green/cyan/blue/purple）の重み付き和。
-  各チャンネルの重みの合計は 1 なので明るさは変わらない
-- 角は superellipse
-- ぼかしは背景が静止しているので真の Gaussian を1回だけ焼く。Skia のぼかしは
-  σ が大きいと三重ボックス近似なので、CSS に投げるより素直に良くなる
-- 背景のカバーは CDN の 2000px 版を使う（API が返すのは 640px まで）
+- Refraction magnitude comes straight from the signed distance:
+  `circleMap(1 - (-sd)/height) * amount`. Shape (`height`) and strength
+  (`amount`) stay independent.
+- Dispersion is the seven weighted taps of the original
+  (red/orange/yellow/green/cyan/blue/purple). Each channel's weights sum to 1,
+  so brightness is unchanged and only the colours separate.
+- Corners are superellipses.
+- The blur is a true Gaussian, baked once. Skia approximates large sigma with a
+  triple box blur, so doing it offline is strictly better than asking CSS.
+- The wallpaper uses the CDN's 2000px cover. The API only exposes 640px.
 
-## 移植が原典と一致することの検証
+## Checking the port against the original
 
-`lab/verify.html` を開くと、その場で確認できる。`tools/gen-agsl.py` が Backdrop の
-`Shaders.kt` から AGSL の原文を機械抽出し、型名だけを置換して GLSL にしたものと、
-拡張が使っている手書きの移植版を、同じ入力・同じ uniform で描いて画素ごとに比べる。
+Open `lab/verify.html`. `tools/gen-agsl.py` extracts the AGSL source straight out
+of Backdrop's `Shaders.kt`, the page translates the scalar type names to GLSL,
+and both that and the hand-written port are rendered with the same inputs and
+compared pixel by pixel.
 
-**72000 画素で最大チャンネル差 1/255、平均 0.0000278、差が 1 を超える画素は 0。**
+**Over 72,000 pixels: maximum channel difference 1/255, mean 0.0000278, and no
+pixel differs by more than 1.** That is inside 8-bit rounding.
 
 ![verify](docs/images/24-verify.jpg)
 
-## 使い方
+## Installing
 
 ```powershell
 git clone https://github.com/satomasahiro2005/glassliquify
@@ -59,26 +66,27 @@ cd glassliquify
 .\deploy.ps1
 ```
 
-`Themes\Liquify-fork` として設置し、`current_theme` を切り替えて `spicetify apply`
-まで走る。Spotify を再起動すれば効く。素の `Liquify` はそのまま残るので、
-`spicetify config current_theme Liquify` で戻せる。
+It installs as `Themes\Liquify-fork`, switches `current_theme` and runs
+`spicetify apply`. Restart Spotify to see it. Stock `Liquify` is left untouched,
+so `spicetify config current_theme Liquify` puts everything back.
 
-- `Ctrl+Shift+G` — このガラスと Liquify 標準の切り替え
-- 上部バーの歯車の左の設定ボタン — クリア / 適応 / くもりのプリセットと、
-  屈折の幅・量、色収差、角の丸み、彩度、ぼかし、縁の光、光の角度など
+- `Ctrl+Shift+G` — this glass vs. Liquify's own
+- The button left of the gear in the top bar — clear / adaptive / frosted
+  presets, plus refraction width and amount, dispersion, corner shape,
+  saturation, blur, rim strength and light angle
 
-詳細は [FORK.md](FORK.md)、権利表示は [NOTICE.md](NOTICE.md)。
+See [FORK.md](FORK.md) for how the fork is structured and [NOTICE.md](NOTICE.md)
+for what came from where.
 
-## ライセンス
+## Licence
 
-土台の Liquify が AGPL-3.0 なので全体も AGPL-3.0。シェーダの移植元である
-Backdrop は Apache-2.0。どのファイルがどちらに由来するかは
-[NOTICE.md](NOTICE.md) に書いてある。
+Liquify is AGPL-3.0, so this is AGPL-3.0. The shaders are ported from Backdrop,
+which is Apache-2.0. [NOTICE.md](NOTICE.md) says which files come from which.
 
 ---
 ---
 
-以下は upstream の Liquify の README。
+Below is the upstream Liquify README, unchanged.
 
 <h1 align="center"> ✨ Liquify Theme Spicetify ✨ </h1>
 
