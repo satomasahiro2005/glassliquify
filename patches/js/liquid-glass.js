@@ -632,10 +632,17 @@
       return 0;
     });
     matched = out;
-    sig = '';   // force one redraw after a rescan
+    sig = '';       // force one redraw after a rescan
+    dirty = true;
   }
 
   var sig = '';
+  var dirty = true;
+
+  /* Idle frames must cost nothing. getBoundingClientRect on every matched
+   * element forces layout, so it only runs when something could have moved:
+   * a scroll, a resize, a rescan, or the slow safety tick. */
+  function markDirty() { dirty = true; }
 
   function drop(m) {
     if (m.el.hasAttribute && m.el.hasAttribute('data-liquify-lg')) {
@@ -647,6 +654,8 @@
 
   function render(force) {
     if (!renderer) return;
+    if (!force && !dirty) return;
+    dirty = false;
     var dpr = window.devicePixelRatio || 1;
     var W = Math.round(window.innerWidth * dpr);
     var H = Math.round(window.innerHeight * dpr);
@@ -770,6 +779,16 @@
 
     rescan();
     setInterval(rescan, 400);
+
+    // anything that can move a surface without a rescan
+    window.addEventListener('scroll', markDirty, { capture: true, passive: true });
+    window.addEventListener('resize', markDirty, { passive: true });
+    window.addEventListener('transitionrun', markDirty, { capture: true, passive: true });
+    window.addEventListener('animationstart', markDirty, { capture: true, passive: true });
+    new MutationObserver(markDirty).observe(document.body, {
+      childList: true, subtree: true, attributes: true,
+      attributeFilter: ['class', 'style'],
+    });
     requestAnimationFrame(loop);
 
     // Ctrl+Shift+G flips between this and Liquify's own glass, so the two can
