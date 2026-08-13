@@ -46,10 +46,19 @@
       TARGETS.push({ selector: sel, radius: 20, ca: true });
     });
 
-    /* Not the shelf cards and not the cover art. Glass belongs where there is
-     * a backdrop to see through it; a card is a cover with a title under it,
-     * and a sheet over that just puts a milky film on the artwork and the
-     * text. The shelf they sit on already carries the surface. */
+    /* The card itself, not the box around its cover. Wrapping the artwork was
+     * what put a film on it; the card is the frame that holds the cover and
+     * its title, and that is a surface like any other. */
+    TARGETS.push({ selector: '.main-card-card', radius: 20, ca: true });
+
+    /* Controls the theme's list misses: the icons at the top right, and the
+     * library header's collapse and create buttons. They sit in the same rows
+     * as surfaces that do have glass, so leaving them flat is what stands
+     * out. */
+    ['.main-actionButtons > button',
+     '.main-yourLibraryX-headerContent button'].forEach(function (sel) {
+      TARGETS.push({ selector: sel, radius: 17, ca: true });
+    });
 
     /* Surfaces that sit on top of the app rather than in it. These want the
      * frosted end of the material: they are asking for attention, and reading
@@ -112,8 +121,11 @@
 
   /* Below this, a control's visible shape is its own background rather than
    * anything glass can stand in for - the carousel arrows on Home disappeared
-   * entirely when their fill was taken away. Leave them to the theme. */
-  var MIN_GLASS_SIZE = 40;
+   * entirely when their fill was taken away. Leave them to the theme.
+   *
+   * 32 rather than 40 so the library header's create button, which is 35, is
+   * not the one flat control in a row of glass ones. */
+  var MIN_GLASS_SIZE = 32;
 
   /* Wrappers that exist to group other panels. Giving each of them a sheet of
    * its own stacks frame inside frame inside frame, and the overlaps read as
@@ -933,6 +945,8 @@
    * differ. Sweep for anything still carrying the theme's bulk filter and take
    * the blur off it, if it is big enough that glass was the point. Small
    * controls keep theirs - it is the only thing making them visible. */
+  var swept = [];
+
   function sweepThemeGlass() {
     var all = document.querySelectorAll('.Root__top-container *');
     for (var i = 0; i < all.length && i < 4000; i++) {
@@ -952,7 +966,18 @@
     /* Every rounded corner in the app, not just the glass. A superellipse next
      * to a circular arc at the same radius reads as two different shapes, and
      * the app is full of both. Circles are left alone - an avatar is meant to
-     * be a circle, not a squircle. */
+     * be a circle, not a squircle.
+     *
+     * Only boxes that actually paint at their corner. A transparent layout
+     * wrapper has no arc to correct, so a clip on it can only take content
+     * away - and it did: three wrappers around the now-playing cover kept a
+     * polygon from when they were 280 wide and cut 108px off the artwork.
+     *
+     * Anything given a clip is remembered, so a box that stops qualifying -
+     * because it lost its radius, its fill, or got too small - has the clip
+     * taken off again instead of keeping a stale one for good. */
+    var stale = swept;
+    swept = [];
     for (i = 0; i < all.length && i < 4000; i++) {
       el = all[i];
       var r2 = el.getBoundingClientRect();
@@ -962,11 +987,30 @@
       if (isNaN(rad) || rad < 6) continue;
       if (cs2.borderTopLeftRadius !== cs2.borderBottomRightRadius) continue;
       if (rad >= Math.min(r2.width, r2.height) / 2 - 0.5) continue;   // a circle
+      if (!paintsAtItsCorner(cs2)) continue;
       var key2 = (r2.width | 0) + 'x' + (r2.height | 0) + 'r' + (rad | 0);
+      swept.push(el);
       if (el.__lgCorner === key2) continue;
       el.__lgCorner = key2;
       el.style.clipPath = squirclePath(r2.width, r2.height, rad, DEFAULTS.superness);
     }
+    for (i = 0; i < stale.length; i++) {
+      if (swept.indexOf(stale[i]) >= 0) continue;
+      stale[i].__lgCorner = null;
+      stale[i].style.removeProperty('clip-path');
+    }
+  }
+
+  /* A box only needs its corner corrected if something is drawn there. With no
+   * fill, no border and no shadow the arc is invisible and a clip can only cut
+   * content out of the box. */
+  function paintsAtItsCorner(cs) {
+    var bg = cs.backgroundColor || '';
+    var opaque = bg && bg !== 'transparent' && !/rgba\([^)]*,\s*0\s*\)$/.test(bg);
+    return opaque ||
+      (cs.backgroundImage && cs.backgroundImage !== 'none') ||
+      parseFloat(cs.borderTopWidth) > 0 ||
+      (cs.boxShadow && cs.boxShadow !== 'none');
   }
 
   function rescan() {
