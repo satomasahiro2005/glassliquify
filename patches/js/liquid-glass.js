@@ -46,6 +46,18 @@
       TARGETS.push({ selector: sel, radius: 20, ca: true });
     });
 
+    /* The boxes that hold artwork. The theme never touched them, so a cover in
+     * the now-playing pane or on a shelf card sat on the wallpaper with no
+     * surface under it while everything around it had one. The artwork itself
+     * is opaque and hides the glass behind it; what shows is the margin around
+     * it and the corner it is cut to. */
+    ['.main-nowPlayingView-coverArtVisualEnhancement',
+     '.main-nowPlayingView-contextItemInfo',
+     '.main-card-card',
+     '.main-cardImage-imageWrapper'].forEach(function (sel) {
+      TARGETS.push({ selector: sel, radius: 20, ca: true });
+    });
+
     /* Surfaces that sit on top of the app rather than in it. These want the
      * frosted end of the material: they are asking for attention, and reading
      * a dialog over a sharp wallpaper is hard. Marked here rather than left to
@@ -230,7 +242,13 @@
     '  if (coord.x >= 0.0) { if (coord.y <= 0.0) return radii.y; else return radii.z; }',
     '  else { if (coord.y <= 0.0) return radii.x; else return radii.w; }',
     '}',
+    /* A radius past half the shorter side has to saturate, the way CSS does.
+     * Left unclamped, halfSize - radius goes negative and the Lp norm is
+     * evaluated on a box larger than the one being drawn: the curve runs out
+     * past the edge and meets itself at a point, so turning the knob up grew a
+     * sharp corner exactly where the shape should have gone fully round. */
     'float sdRoundedRect(vec2 coord, vec2 halfSize, float radius, float n) {',
+    '  radius = min(radius, min(halfSize.x, halfSize.y));',
     '  vec2 q = abs(coord) - (halfSize - vec2(radius));',
     '  if (q.x <= 0.0 || q.y <= 0.0) return max(q.x, q.y) - radius;',
     '  if (n <= 2.001) return length(q) - radius;',
@@ -241,6 +259,7 @@
     '  return gl < 1e-6 ? f : f / gl;',
     '}',
     'vec2 gradSdRoundedRect(vec2 coord, vec2 halfSize, float radius, float n) {',
+    '  radius = min(radius, min(halfSize.x, halfSize.y));',
     '  vec2 q = abs(coord) - (halfSize - vec2(radius));',
     '  if (q.x >= 0.0 && q.y >= 0.0) {',
     '    vec2 gv = (n <= 2.001) ? q : vec2(pow(q.x, n - 1.0), pow(q.y, n - 1.0));',
@@ -875,10 +894,20 @@
     setStyle(enabled);
     if (canvas) canvas.style.display = enabled ? '' : 'none';
     if (!enabled) {
+      /* The toggle has to put back what the theme would have looked like, so
+       * everything this pass wrote inline goes with the attribute. Leaving the
+       * clip and the flattened radius behind made "off" a third look that was
+       * neither ours nor Liquify's. */
       document.querySelectorAll('[data-liquify-lg],[data-liquify-lg-plain]').forEach(function (el) {
         el.removeAttribute('data-liquify-lg');
         el.removeAttribute('data-liquify-lg-plain');
-
+        el.style.removeProperty('border-radius');
+        el.style.removeProperty('clip-path');
+        el.style.removeProperty('box-shadow');
+        el.style.removeProperty('border-color');
+        el.style.removeProperty('backdrop-filter');
+        el.style.removeProperty('-webkit-backdrop-filter');
+        el.__lgRadius = null;
       });
     }
     if (!quiet) flash(enabled ? 'liquid glass: ON' : 'liquid glass: OFF (Liquify 標準)');
@@ -1001,17 +1030,18 @@
    * a scroll, a resize, a rescan, or the slow safety tick. */
   function markDirty() { dirty = true; }
 
-  /* One corner for the whole app. Clamping per element - to half its height,
-   * or to a third of it - is what stopped the radius being uniform: a column
-   * kept the full curve while a shortcut tile got whatever fitted, and the two
-   * read as different shapes side by side.
+  /* One corner for the whole app, and it is whatever the knob says. Clamping
+   * per element - to half its height, or to a third of it - is what stopped
+   * the radius being uniform: a column kept the full curve while a shortcut
+   * tile got whatever fitted, and the two read as different shapes side by
+   * side. Clamping globally instead just took the knob away.
    *
-   * Nothing under MIN_GLASS_SIZE is drawn, so half of that is the largest
-   * radius every surface can carry without turning into a pill. Past it the
-   * knob has nothing left to give: a taller panel could take more, but then it
-   * would not match the tile beside it. */
+   * Past half the shortest surface's height the corner has nowhere left to go
+   * and that surface becomes a pill - a 48px shortcut tile does this at 24 and
+   * its artwork, flush in the corner, goes with it. That is the cost of one
+   * radius for everything, and it belongs to whoever is turning the knob. */
   function uniformRadius() {
-    return Math.min(DEFAULTS.cornerRadius * DEFAULTS.radiusScale, MIN_GLASS_SIZE / 2);
+    return DEFAULTS.cornerRadius * DEFAULTS.radiusScale;
   }
 
   function drawCinema(el) {
@@ -1061,6 +1091,7 @@
     if (m.el.hasAttribute && m.el.hasAttribute('data-liquify-lg')) {
       m.el.removeAttribute('data-liquify-lg');
       m.el.style.removeProperty('border-radius');
+      m.el.style.removeProperty('clip-path');
       m.el.__lgRadius = null;
       m.el.style.removeProperty('backdrop-filter');
       m.el.style.removeProperty('-webkit-backdrop-filter');
@@ -1169,22 +1200,22 @@
        * radius put the sheet's edge inside or outside the clipped corner, and
        * the frame disappeared where they disagreed. */
       var radius = uniformRadius();
-      /* The corner reads as Apple's because of its curvature, not because it is
-       * bigger. Keep the theme's radius and give the element the same
-       * superellipse the shader uses - safe now that the theme's own border and
-       * shadow are stripped from these surfaces, so nothing draws the old arc
-       * beside it. */
-      /* Only touch the element's own radius when the knob actually changes it.
-       * Forcing a border-radius on every surface rounded things that were meant
-       * to be square and made the whole app look inflated. */
-      if (DEFAULTS.radiusScale !== 1) {
-        if (mm.el.__lgRadius !== radius) {
-          mm.el.__lgRadius = radius;
-          mm.el.style.setProperty('border-radius', radius + 'px', 'important');
-        }
-      } else if (mm.el.__lgRadius) {
-        mm.el.__lgRadius = null;
-        mm.el.style.removeProperty('border-radius');
+      /* Whatever sits in the corner has to be cut on the same curve the shader
+       * draws. border-radius cannot do that: at the same number it is a
+       * circular arc, which bites deeper than the superellipse and leaves the
+       * artwork's corner visibly rounder than the frame around it. So the
+       * radius goes to zero and clip-path carries the shape.
+       *
+       * This only clips content now - the element's own fill, border and
+       * shadow are already stripped - so the polygon is not drawn next to the
+       * rim and cannot double it. */
+      var clipKey = (rr.width | 0) + 'x' + (rr.height | 0) + 'r' + radius.toFixed(1) +
+                    'n' + DEFAULTS.superness;
+      if (mm.el.__lgRadius !== clipKey) {
+        mm.el.__lgRadius = clipKey;
+        mm.el.style.setProperty('border-radius', '0', 'important');
+        mm.el.style.setProperty('clip-path',
+          squirclePath(rr.width, rr.height, radius, DEFAULTS.superness, 32));
       }
       /* No clip-path. The element is transparent and the frame is drawn by the
        * shader, so clipping buys nothing - and the polygon approximates the
