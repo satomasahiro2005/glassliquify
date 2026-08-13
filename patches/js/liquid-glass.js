@@ -998,6 +998,7 @@
   // ---- wiring -------------------------------------------------------------
 
   var canvas, renderer, currentUrl = null, pending = false, haveBackdrop = null;
+  var queued = false;
   var lumMap = null;
 
   /* Backdrop's AdaptiveLuminanceGlassContent: the material reads the luminance
@@ -1876,8 +1877,13 @@
   var retry = null;
 
   function refreshBackdrop() {
-    if (pending) return;
+    /* A call that arrives while a rebuild is in flight is remembered, not
+     * dropped. Dropping it is how the backdrop ended up built for a size the
+     * window no longer had: the resize that landed mid-rebuild was the last
+     * one, and nothing came after it to correct the size. */
+    if (pending) { queued = true; return; }
     pending = true;
+    queued = false;
     if (retry) { clearTimeout(retry); retry = null; }
 
     var urls = coverUrls();
@@ -1895,6 +1901,17 @@
 
     tryNext(0).then(function (img) {
       pending = false;
+      /* Only if the window actually moved on: re-running for the same size
+       * would rebuild identical pixels. */
+      if (queued) {
+        queued = false;
+        var dpr2 = window.devicePixelRatio || 1;
+        if (Math.round(window.innerWidth * dpr2) !== W ||
+            Math.round(window.innerHeight * dpr2) !== H) {
+          refreshBackdrop();
+          return;
+        }
+      }
       if (!img) {
         // no cover yet (startup) or the load failed - keep whatever we had and
         // come back for it rather than baking the fallback fill in
