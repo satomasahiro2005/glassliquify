@@ -67,11 +67,7 @@
   var MAX_ELEMENTS = 400;   // backstop; drawing is cheap, layout reads are not
 
   var DEFAULTS = {
-    /* The element keeps its own border and shadow, and CSS draws those on its
-     * circular border-radius. Shaping the glass as a superellipse then puts two
-     * differently curved outlines on the same corner. Match the element; the
-     * panel can push this up for a true squircle, at the cost of that mismatch. */
-    superness: 2,
+    superness: 4,        // superellipse, not a circular arc
     height: 24,
     amount: 48,
     depthEffect: 1,
@@ -87,6 +83,7 @@
     hlFalloff: 2,
     hlAlpha: 0.5,
     hlWidth: 1.5,
+    hlFloor: 0.35,
   };
 
   // ---- shaders ------------------------------------------------------------
@@ -153,6 +150,7 @@
     'uniform float uHlAngle;',
     'uniform float uHlFalloff;',
     'uniform float uHlWidth;',
+    'uniform float uHlFloor;',
     '',
     'float radiusAt(vec2 coord, vec4 radii) {',
     '  if (coord.x >= 0.0) { if (coord.y <= 0.0) return radii.y; else return radii.z; }',
@@ -240,7 +238,9 @@
     '  float gradRadius = min(radius * 1.5, min(halfSize.x, halfSize.y));',
     '  vec2 g = gradSdRoundedRect(centered, halfSize, gradRadius, uSuperness);',
     '  vec2 lightDir = vec2(cos(uHlAngle), sin(uHlAngle));',
-    '  float intensity = pow(abs(dot(g, lightDir)), uHlFalloff);',
+    '  // a floor keeps the rim continuous all the way round, so it reads as',
+    '  // the frame of the panel and not just a glint on the lit sides',
+    '  float intensity = mix(uHlFloor, 1.0, pow(abs(dot(g, lightDir)), uHlFalloff));',
     '  float band = 1.0 - smoothstep(uHlWidth - 1.0, uHlWidth + 1.0, -sd);',
     '  color.rgb += uHighlight.rgb * (intensity * band * uHighlight.a);',
     '  float cov = clamp(-sd, 0.0, 1.0);',
@@ -305,7 +305,7 @@
     this.u = {};
     ['uCanvas','uRect','uRadii','uSuperness','uRefractionHeight','uRefractionAmount',
      'uDepthEffect','uDispersion','uDispersionCorner','uBrightness','uContrast','uSaturation',
-     'uSurface','uHighlight','uHlAngle','uHlFalloff','uHlWidth','uBackdrop',
+     'uSurface','uHighlight','uHlAngle','uHlFalloff','uHlWidth','uHlFloor','uBackdrop',
      'uBackdropBlur','uBlurMix'
     ].forEach(function (n) { this.u[n] = gl.getUniformLocation(this.prog, n); }, this);
     this.uq = {
@@ -465,6 +465,7 @@
     gl.uniform1f(u.uHlAngle, o.hlAngle * Math.PI / 180);
     gl.uniform1f(u.uHlFalloff, o.hlFalloff);
     gl.uniform1f(u.uHlWidth, o.hlWidth);
+    gl.uniform1f(u.uHlFloor, o.hlFloor == null ? 0.35 : o.hlFloor);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   };
 
@@ -890,6 +891,7 @@
 
       var minDim = Math.min(rr.width, rr.height);
       var radius = Math.min(mm.radius, minDim / 2);
+      applySquircle(mm.el, rr.width, rr.height, radius, DEFAULTS.superness);
 
       // a full-size lens on a small chip looks wrong; scale it to what fits
       var scale = Math.min(1, minDim / 96);
