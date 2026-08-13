@@ -52,12 +52,14 @@
   ];
 
   var CSS =
-    '#liquify-lg-btn{position:fixed;right:18px;bottom:110px;z-index:99998;width:42px;height:42px;' +
-    'border-radius:50%;border:1px solid rgba(255,255,255,.22);background:rgba(20,20,24,.72);' +
-    'backdrop-filter:blur(14px);color:#fff;font-size:18px;cursor:pointer;display:flex;' +
-    'align-items:center;justify-content:center;transition:transform .15s,background .15s;}' +
-    '#liquify-lg-btn:hover{transform:scale(1.08);background:rgba(30,30,36,.85);}' +
-    '#liquify-lg-panel{position:fixed;right:18px;bottom:162px;z-index:99999;width:286px;' +
+    /* matched to #liquify-settings-gear-btn so the pair reads as one control */
+    '#liquify-lg-btn{display:inline-flex;align-items:center;justify-content:center;' +
+    'width:47px;height:47px;border:0;background:transparent;cursor:pointer;' +
+    'color:var(--text-subdued);z-index:2;align-self:center;box-shadow:var(--liquify-shadow);' +
+    'border-radius:17px;transition:transform .28s cubic-bezier(.3,2.25,.32,1)!important;}' +
+    '#liquify-lg-btn:hover{color:var(--text-base);transform:scale(1.05);}' +
+    '#liquify-lg-btn svg{width:18px;height:18px;display:block;}' +
+    '#liquify-lg-panel{position:fixed;right:18px;top:64px;z-index:99999;width:286px;' +
     'padding:14px 16px;border-radius:16px;border:1px solid rgba(255,255,255,.14);' +
     'background:rgba(18,18,22,.94);backdrop-filter:blur(20px);color:#fff;' +
     'font:12px/1.5 ui-sans-serif,system-ui,"Segoe UI",sans-serif;' +
@@ -124,13 +126,17 @@
     return localStorage.getItem(RETINA_KEY) === 'on';
   }
 
+  function applyRetina() {
+    document.documentElement.style.zoom = retinaOn() ? '2' : '';
+  }
+
+  /* Toggling this live leaves half the app measured at the old scale, so it is
+   * saved and the window is reloaded. A true device scale change needs
+   * --force-device-scale-factor at launch, which a panel inside the app cannot
+   * set; this is CSS zoom, applied once on load. */
   function setRetina(on) {
     try { localStorage.setItem(RETINA_KEY, on ? 'on' : 'off'); } catch (e) {}
-    document.documentElement.style.zoom = on ? '2' : '';
-    if (window.liquifyLG) {
-      window.liquifyLG.rescan();
-      window.liquifyLG.render();
-    }
+    location.reload();
   }
 
   function syncInputs() {
@@ -153,11 +159,54 @@
     save();
   }
 
+  /* Liquify puts its gear in .main-actionButtons and creates it asynchronously,
+   * so wait for it and sit immediately to its left. Falls back to the same host
+   * (or the top bar) if the gear never turns up. */
+  var GEAR = '#liquify-settings-gear-btn';
+  var HOST = '.main-actionButtons';
+
+  function placeButton(btn) {
+    var tries = 0;
+    var put = function () {
+      var gear = document.querySelector(GEAR);
+      var host = document.querySelector(HOST);
+      if (gear && gear.parentElement) {
+        if (btn.nextElementSibling !== gear) gear.parentElement.insertBefore(btn, gear);
+        return true;
+      }
+      if (host && tries > 30) { host.insertBefore(btn, host.firstChild); return true; }
+      return false;
+    };
+    if (put()) { keepPlaced(btn); return; }
+    var iv = setInterval(function () {
+      if (put() || ++tries > 60) { clearInterval(iv); keepPlaced(btn); }
+    }, 300);
+  }
+
+  /* Spotify rebuilds the top bar on navigation and takes the button with it. */
+  function keepPlaced(btn) {
+    setInterval(function () {
+      if (btn.isConnected) return;
+      var gear = document.querySelector(GEAR);
+      if (gear && gear.parentElement) gear.parentElement.insertBefore(btn, gear);
+    }, 1000);
+  }
+
   function build() {
     document.head.appendChild(el('style', { text: CSS }));
 
-    var btn = el('button', { id: 'liquify-lg-btn', title: 'Liquid Glass の設定', text: '◍' });
-    document.body.appendChild(btn);
+    var btn = el('button', { id: 'liquify-lg-btn', type: 'button' });
+    btn.setAttribute('aria-label', 'Liquid Glass の設定');
+    btn.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+      '<rect x="3.2" y="6.2" width="17.6" height="11.6" rx="5" ' +
+      'stroke="currentColor" stroke-width="1.6"/>' +
+      '<path d="M6.4 9.2c1.6 1.1 3.4 1.7 5.6 1.7s4-.6 5.6-1.7" ' +
+      'stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity=".75"/>' +
+      '</svg>';
+    btn.style.setProperty('-webkit-app-region', 'no-drag');
+    btn.style.pointerEvents = 'auto';
+    placeButton(btn);
 
     var presets = el('div', { class: 'presets' });
     Object.keys(PRESETS).forEach(function (k) {
@@ -224,7 +273,7 @@
     ]));
 
     var reset = el('button', { text: '既定に戻す' });
-    reset.addEventListener('click', function () { applyPreset('adaptive'); });
+    reset.addEventListener('click', function () { applyPreset('clear'); });
     panel.appendChild(el('div', { class: 'row' }, [
       el('span', { text: 'リセット' }), reset,
     ]));
@@ -237,9 +286,9 @@
       if (!panel.hidden) syncInputs();
     });
 
-    if (retinaOn()) setRetina(true);
-    current = restore() || 'adaptive';
-    if (!localStorage.getItem(KEY)) applyPreset('adaptive');
+    applyRetina();
+    current = restore() || 'clear';
+    if (!localStorage.getItem(KEY)) applyPreset('clear');
     syncInputs();
   }
 

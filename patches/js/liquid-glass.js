@@ -43,7 +43,7 @@
     amount: 48,
     depthEffect: 1,
     dispersion: 1,        // Backdrop passes chromaticAberration = 1.0
-    adaptive: true,       // read the backdrop's luminance per surface
+    adaptive: false,      // the panel's 適応 preset turns this on
     blurMix: 0,
     dispersionCorner: 1,   // 1 = corners only, as Backdrop and iOS do it
     brightness: 0,
@@ -734,6 +734,14 @@
       for (var j = 0; j < els.length && out.length < MAX_ELEMENTS; j++) {
         var el = els[j];
         var cs = getComputedStyle(el);
+        /* A surface pinned inside a scroller has the list passing underneath
+         * it, and the canvas only knows the wallpaper - it would blur a static
+         * image while the real content slides past. Those keep the theme's own
+         * backdrop-filter, which reads the actual backdrop. Surfaces that
+         * scroll along with their backdrop are fine. */
+        if (cs.position === 'sticky' || cs.position === 'fixed') {
+          if (scrollClipOf(el)) continue;
+        }
         var cssR = parseFloat(cs.borderTopLeftRadius);
         out.push({
           el: el,
