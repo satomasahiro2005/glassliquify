@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>backdrop 一致検証</title>
+<script src="agsl-source.js"></script>
+<style>
+  body { font: 13px/1.6 ui-monospace, monospace; background: #0e0e11; color: #ddd; margin: 16px; }
+  h1 { font-size: 13px; letter-spacing: .1em; text-transform: uppercase; opacity: .6; margin: 0 0 12px; }
+  .row { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+  figure { margin: 0; }
+  figcaption { font-size: 11px; opacity: .6; margin-top: 4px; }
+  canvas { background: #000; image-rendering: pixelated; border: 1px solid #333; }
+  #out { white-space: pre-wrap; margin-top: 14px; }
+  .pass { color: #4ade80; } .fail { color: #f87171; }
+  table { border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+  td, th { border: 1px solid #333; padding: 3px 8px; text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+</style>
+</head>
+<body>
+<h1>Backdrop の AGSL と、移植した GLSL の一致検証</h1>
+<p style="opacity:.7;max-width:70ch">
+原典 <code>RoundedRectRefractionWithDispersionShaderString</code> を Shaders.kt から
+機械抽出し（<code>agsl-source.js</code>）、型名だけを置換して GLSL にしたものと、
+拡張が使っている手書きの移植版を、同じ入力・同じ uniform で描いて画素ごとに比べる。
+手で写した箇所に間違いがあれば差分に出る。
+</p>
+
+<div class="row">
+  <figure><canvas id="a" width="360" height="200"></canvas><figcaption>A: 原典 AGSL → GLSL（機械変換）</figcaption></figure>
+  <figure><canvas id="b" width="360" height="200"></canvas><figcaption>B: 拡張の移植版</figcaption></figure>
+  <figure><canvas id="d" width="360" height="200"></canvas><figcaption>差分 ×32</figcaption></figure>
+</div>
+<div id="out"></div>
+
+<script>
+const W = 360, H = 200;
+
+/* AGSL は GLSL のスカラー名違いなので、置換だけで通る。
+ * content.eval(p) はテクスチャ参照になる。 */
+function agslToGlsl(src) {
+  let s = src;
+  s = s.replace(/\buniform\s+shader\s+\w+\s*;/g, '');
+  s = s.replace(/\bhalf4\b/g, 'vec4').replace(/\bhalf3\b/g, 'vec3')
+       .replace(/\bhalf2\b/g, 'vec2').replace(/\bhalf\b/g, 'float')
+       .replace(/\bfloat4\b/g, 'vec4').replace(/\bfloat3\b/g, 'vec3')
+       .replace(/\bfloat2\b/g, 'vec2');
+  s = s.replace(/content\s*\.\s*eval\s*\(/g, 'sampleContent(');
+  // half4 main(float2 coord) { ... }  ->  vec4 lens(vec2 coord) { ... }
+  s = s.replace(/vec4\s+main\s*\(\s*vec2\s+coord\s*\)/, 'vec4 lens(vec2 coord)');
+  return s;
+}
+
+const HEAD = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uContent;
+uniform vec2 uViewport;
+vec4 sampleContent(vec2 p) { return texture(uContent, p / uViewport); }
+`;
+
+const TAIL = `
+void main() {
+  outColor = lens(vUv * uViewport);
+}`;
+
+/* B: the port that ships in patches/js/liquid-glass.js, with the stages that
+ * are not part of the original lens (colorControls, tint, highlight, coverage)
+ * left out, so the comparison is like for like. superness = 2 selects the
+ * circular corners the original uses. */
+const PORT = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uContent;
+uniform vec2 uViewport;
+uniform vec2 size;
+uniform vec2 offset;
+uniform vec4 cornerRadii;
+uniform float refractionHeight;
+uniform float refractionAmount;
+uniform float depthEffect;
+uniform float chromaticAberration;
+
+vec4 sampleBackdrop(vec2 p) { return texture(uContent, p / uViewport); }
+
+float radiusAt(vec2 coord, vec4 radii) {
+  if (coord.x >= 0.0) { if (coord.y <= 0.0) return radii.y; else return radii.z; }
+  else { if (coord.y <= 0.0) return radii.x; else return radii.w; }
+}
+float sdRoundedRect(vec2 coord, vec2 halfSize, float radius, float n) {
+  vec2 q = abs(coord) - (halfSize - vec2(radius));
+  if (q.x <= 0.0 || q.y <= 0.0) return max(q.x, q.y) - radius;
+  if (n <= 2.001) return length(q) - radius;
+  float an = pow(q.x, n) + pow(q.y, n);
+  float f = pow(an, 1.0 / n) - radius;
+  vec2 gv = vec2(pow(q.x, n - 1.0), pow(q.y, n - 1.0));
+  float gl = length(gv) / pow(an, (n - 1.0) / n);
+  return gl < 1e-6 ? f : f / gl;
+}
+vec2 gradSdRoundedRect(vec2 coord, vec2 halfSize, float radius, float n) {
+  vec2 q = abs(coord) - (halfSize - vec2(radius));
+  if (q.x >= 0.0 && q.y >= 0.0) {
+    vec2 gv = (n <= 2.001) ? q : vec2(pow(q.x, n - 1.0), pow(q.y, n - 1.0));
+    return sign(coord) * normalize(max(gv, 1e-6));
+  } else {
+    float gradX = step(q.y, q.x);
+    return sign(coord) * vec2(gradX, 1.0 - gradX);
+  }
+}
+float circleMap(float x) { return 1.0 - sqrt(1.0 - x * x); }
+
+void main() {
+  vec2 coord = vUv * uViewport;
+  vec2 halfSize = size * 0.5;
+  vec2 centered = (coord + offset) - halfSize;
+  float radius = radiusAt(centered, cornerRadii);
+  float sd = sdRoundedRect(centered, halfSize, radius, 2.0);
+
+  vec2 refracted = coord;
+  vec2 dispersed = vec2(0.0);
+  if (-sd < refractionHeight) {
+    float sdc = min(sd, 0.0);
+    float d = circleMap(1.0 - (-sdc) / refractionHeight) * refractionAmount;
+    float gradRadius = min(radius * 1.5, min(halfSize.x, halfSize.y));
+    vec2 grad = normalize(gradSdRoundedRect(centered, halfSize, gradRadius, 2.0)
+                          + depthEffect * normalize(centered + 1e-6));
+    refracted = coord + d * grad;
+    float uv = (centered.x * centered.y) / (halfSize.x * halfSize.y);
+    dispersed = d * grad * (chromaticAberration * uv);
+  }
+
+  vec4 color = vec4(0.0);
+  vec4 red = sampleBackdrop(refracted + dispersed);
+  color.r += red.r / 3.5;
+  vec4 orange = sampleBackdrop(refracted + dispersed * (2.0 / 3.0));
+  color.r += orange.r / 3.5; color.g += orange.g / 7.0;
+  vec4 yellow = sampleBackdrop(refracted + dispersed * (1.0 / 3.0));
+  color.r += yellow.r / 3.5; color.g += yellow.g / 3.5;
+  vec4 green = sampleBackdrop(refracted);
+  color.g += green.g / 3.5;
+  vec4 cyan = sampleBackdrop(refracted - dispersed * (1.0 / 3.0));
+  color.g += cyan.g / 3.5; color.b += cyan.b / 3.0;
+  vec4 blue = sampleBackdrop(refracted - dispersed * (2.0 / 3.0));
+  color.b += blue.b / 3.0;
+  vec4 purple = sampleBackdrop(refracted - dispersed);
+  color.r += purple.r / 7.0; color.b += purple.b / 3.0;
+  color.a = 1.0;
+  outColor = color;
+}`;
+
+const VERT = `#version 300 es
+in vec2 aPos;
+out vec2 vUv;
+void main() { vUv = aPos; gl_Position = vec4(aPos * 2.0 - 1.0, 0.0, 1.0); }`;
+
+function makeGL(canvas) {
+  const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, antialias: false });
+  if (!gl) throw new Error('WebGL2 unavailable');
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0,0, 1,0, 0,1, 0,1, 1,0, 1,1]), gl.STATIC_DRAW);
+  return gl;
+}
+
+function program(gl, fs) {
+  const mk = (t, src) => {
+    const s = gl.createShader(t); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+      throw new Error(gl.getShaderInfoLog(s) + '\n---\n' +
+        src.split('\n').map((l,i)=>(i+1)+': '+l).join('\n'));
+    }
+    return s;
+  };
+  const p = gl.createProgram();
+  gl.attachShader(p, mk(gl.VERTEX_SHADER, VERT));
+  gl.attachShader(p, mk(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const a = gl.getAttribLocation(p, 'aPos');
+  gl.enableVertexAttribArray(a);
+  gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
+  return p;
+}
+
+// high-frequency content, so any sampling difference shows up
+function contentCanvas() {
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const x = c.getContext('2d');
+  for (let j = 0; j < H; j += 8) for (let i = 0; i < W; i += 8) {
+    x.fillStyle = ((i/8 + j/8) & 1) ? '#ffffff' : '#1a1a20';
+    x.fillRect(i, j, 8, 8);
+  }
+  x.fillStyle = '#ff2d55'; x.fillRect(0, 0, W, 3);
+  x.fillStyle = '#34d399'; x.fillRect(0, H-3, W, 3);
+  x.fillStyle = '#3b82f6';
+  for (let i = 0; i < W; i += 37) x.fillRect(i, 0, 2, H);
+  return c;
+}
+
+const UNI = {
+  size: [300, 150],
+  offset: [-30, -25],           // element box inset inside the viewport
+  cornerRadii: [36, 36, 36, 36],
+  refractionHeight: 24,
+  refractionAmount: -48,        // Backdrop passes it negated
+  depthEffect: 1,
+  chromaticAberration: 1,
+};
+
+function draw(canvas, fs) {
+  const gl = makeGL(canvas);
+  const p = program(gl, fs);
+  gl.useProgram(p);
+
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, contentCanvas());
+  gl.uniform1i(gl.getUniformLocation(p, 'uContent'), 0);
+  gl.uniform2f(gl.getUniformLocation(p, 'uViewport'), W, H);
+
+  const set = (n, v) => {
+    const l = gl.getUniformLocation(p, n);
+    if (l === null) return;
+    if (Array.isArray(v)) {
+      if (v.length === 2) gl.uniform2fv(l, v); else gl.uniform4fv(l, v);
+    } else gl.uniform1f(l, v);
+  };
+  for (const k in UNI) set(k, UNI[k]);
+
+  gl.viewport(0, 0, W, H);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+  const px = new Uint8Array(W * H * 4);
+  gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  return px;
+}
+
+const out = document.getElementById('out');
+try {
+  const agsl = window.AGSL.RoundedRectRefractionWithDispersionShaderString;
+  const translated = HEAD + agslToGlsl(agsl) + TAIL;
+
+  const A = draw(document.getElementById('a'), translated);
+  const B = draw(document.getElementById('b'), PORT);
+
+  // difference image, and stats over the pixels inside the shape
+  const dc = document.getElementById('d');
+  const dx = dc.getContext('2d');
+  const img = dx.createImageData(W, H);
+  let max = 0, sum = 0, n = 0, over1 = 0, over4 = 0;
+  for (let i = 0; i < W * H; i++) {
+    let m = 0;
+    for (let k = 0; k < 3; k++) {
+      const d = Math.abs(A[i*4+k] - B[i*4+k]);
+      if (d > m) m = d;
+    }
+    img.data[i*4] = Math.min(255, m * 32);
+    img.data[i*4+1] = Math.min(255, m * 32);
+    img.data[i*4+2] = Math.min(255, m * 32);
+    img.data[i*4+3] = 255;
+    if (m > max) max = m;
+    sum += m; n++;
+    if (m > 1) over1++;
+    if (m > 4) over4++;
+  }
+  dx.putImageData(img, 0, 0);
+
+  const mean = sum / n;
+  const pass = max <= 2;
+  out.innerHTML =
+    '<table><tr><th>指標</th><th>値</th></tr>' +
+    '<tr><td>比較画素数</td><td>' + n + '</td></tr>' +
+    '<tr><td>最大チャンネル差</td><td>' + max + ' / 255</td></tr>' +
+    '<tr><td>平均チャンネル差</td><td>' + mean.toFixed(4) + '</td></tr>' +
+    '<tr><td>差 &gt; 1 の画素</td><td>' + over1 + ' (' + (100*over1/n).toFixed(3) + '%)</td></tr>' +
+    '<tr><td>差 &gt; 4 の画素</td><td>' + over4 + ' (' + (100*over4/n).toFixed(3) + '%)</td></tr>' +
+    '</table><p class="' + (pass ? 'pass' : 'fail') + '">' +
+    (pass ? '一致（8bit 量子化の範囲内）' : '不一致 — 移植のどこかが原典と違う') + '</p>';
+  window.__verify = { max, mean, over1, over4, n, pass };
+} catch (e) {
+  out.innerHTML = '<span class="fail">' + String(e.message || e).replace(/</g,'&lt;') + '</span>';
+  window.__verify = { error: String(e.message || e) };
+}
+</script>
+</body>
+</html>
