@@ -120,10 +120,13 @@ MAP = {
 
 
 def main():
-    msg = sys.stdin.read()
-    first = msg.strip().split("\n")[0]
+    # Read and write bytes. On Windows the default stdin encoding is cp932, so
+    # the Japanese first line never matches a key and every message passes
+    # through unchanged - which looks exactly like the filter having no effect.
+    raw = sys.stdin.buffer.read().decode("utf-8", "replace")
+    first = raw.strip().split("\n")[0].strip()
     out = MAP.get(first)
-    sys.stdout.write(out + "\n" if out else msg)
+    sys.stdout.buffer.write(((out + "\n") if out else raw).encode("utf-8"))
 
 
 if __name__ == "__main__":
