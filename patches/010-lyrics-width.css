@@ -1,0 +1,19 @@
+/* 010-lyrics-width
+ * 歌詞の表示領域の横幅を広げる。
+ *
+ * Spotify 側の既定 (xpui-snapshot.css):
+ *   .lyrics-lyrics-contentContainer .lyrics-lyrics-contentWrapper {
+ *     width: min(100% - 128px, 1024px);
+ *   }
+ * 上限 1024px と左右 128px の余白で絞られている。この2つを変数にして上書きする。
+ * セレクタは全画面歌詞と右パネルの歌詞で共通なので、両方に効く。
+ */
+
+:root {
+  --lyrics-max-width: 100%;
+  --lyrics-side-gap: 0px;
+}
+
+.lyrics-lyrics-contentContainer .lyrics-lyrics-contentWrapper {
+  width: min(100% - var(--lyrics-side-gap), var(--lyrics-max-width)) !important;
+}
