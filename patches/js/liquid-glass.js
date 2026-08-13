@@ -73,6 +73,11 @@
     hlAlpha: 0.55,
   };
 
+  /* Below this, a control's visible shape is its own background rather than
+   * anything glass can stand in for - the carousel arrows on Home disappeared
+   * entirely when their fill was taken away. Leave them to the theme. */
+  var MIN_GLASS_SIZE = 40;
+
   var MAX_ELEMENTS = 400;   // backstop; drawing is cheap, layout reads are not
 
   var DEFAULTS = {
@@ -748,17 +753,15 @@
        * in user.css the toggle's off state was not the untouched theme either,
        * which made any comparison meaningless. */
       ':root{--liquify-bg-blur:0px!important;}' +
-      /* Full screen puts the now-playing sections in a row underneath the
-       * cover, but the panel ends before the row does: the row starts 72px
-       * inside it and then runs off the bottom of the window. Nothing about it
-       * is reachable, so it only shows as content bleeding through the sheet.
-       * Measured at 1600x900: panel 8,64 1584x727, row 8,719 1584x408. */
-      '.Root__cinema-view .main-nowPlayingView-section{display:none!important;}' +
       /* Full screen is not full screen: the right sidebar stays up at z-index 4
        * (420x879 next to a 1584-wide cinema panel) and the now-playing rows sit
        * under it. Nothing there is reachable while the cover is up, so take the
        * whole column out for as long as it lasts. */
-      'html.liquify-cinema .Root__right-sidebar{display:none!important;}';
+      'html.liquify-cinema .Root__right-sidebar{display:none!important;}' +
+      /* The bars fade on Spotify's timer, but the theme's border on them does
+       * not, so an empty frame hangs there after the contents have gone. */
+      'html.liquify-cinema .Root__now-playing-bar,html.liquify-cinema .Root__globalNav{' +
+      'border-color:transparent!important;box-shadow:none!important;background:none!important;}';
     document.head.appendChild(st);
   }
 
@@ -985,7 +988,7 @@
       var op = +getComputedStyle(m.el).opacity;
       if (!(op > 0.02)) { drop(m); continue; }
       var r = m.el.getBoundingClientRect();
-      if (r.width < 4 || r.height < 4 ||
+      if (Math.min(r.width, r.height) < MIN_GLASS_SIZE ||
           r.bottom <= 0 || r.top >= window.innerHeight ||
           r.right <= 0 || r.left >= window.innerWidth) { drop(m); continue; }
       var c = (m.clip && m.clip.isConnected) ? m.clip.getBoundingClientRect() : null;
