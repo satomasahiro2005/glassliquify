@@ -919,6 +919,17 @@
 
   var FLOAT_ATTR = 'data-liquify-lg-float';
 
+  function clearFloat(el) {
+    if (!el.hasAttribute(FLOAT_ATTR)) return;
+    el.removeAttribute(FLOAT_ATTR);
+    el.__lgFloat = null;
+    ['--lg-ring', '--lg-rim', '--lg-rim-floor', '--lg-angle'].forEach(function (p) {
+      el.style.removeProperty(p);
+    });
+    el.style.removeProperty('backdrop-filter');
+    el.style.removeProperty('-webkit-backdrop-filter');
+  }
+
   /* Only the cards that float over the page. A dialog stops the app and has to
    * be read, and this material is too clear for that - the settings modal came
    * out with Daily Mix tiles legible across its labels. Those keep the theme's
@@ -932,6 +943,13 @@
   }
 
   function applyFloat(el) {
+    /* Never both. A surface the shader draws already has its glass, and the
+     * SVG lens on top of it refracts the same backdrop a second time: the bell
+     * and the social button came out as fat blobs beside our own buttons,
+     * which are the same size and were only ever drawn once. Spotify moved
+     * .main-topBar-buddyFeed from the friends panel onto the button, which is
+     * how a floater selector ended up matching a control. */
+    if (el.hasAttribute('data-liquify-lg')) { clearFloat(el); return; }
     /* Layout size, not the painted rect. A context menu animates in with a
      * transform, so getBoundingClientRect returns whatever it is mid-scale,
      * while clip-path and the filter's user space are both measured before the
@@ -1576,6 +1594,10 @@
     for (i = 0; i < list.length; i++) {
       var it = list[i], mm = it.m, rr = it.r;
       if (!mm.el.hasAttribute('data-liquify-lg')) {
+        /* If the float pass got here first, take its treatment off. The draw
+         * pass wins: it knows this surface's backdrop, which is what the whole
+         * shader path is for. */
+        clearFloat(mm.el);
         remember(mm.el);
         mm.el.setAttribute('data-liquify-lg', '');
         /* Some of these carry their outline with !important from the theme's
