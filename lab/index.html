@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>liquid glass lab</title>
+<script src="liquid-glass.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font: 13px/1.5 ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+    color: #fff; background: #000; overflow: hidden;
+  }
+
+  /* the "known" backdrop - one image, nothing scrolls under it */
+  #bg { position: fixed; inset: 0; z-index: 0; }
+  #bg canvas { width: 100%; height: 100%; display: block; }
+
+  #stage { position: fixed; inset: 0; z-index: 1; }
+
+  .panel {
+    position: absolute;
+    border-radius: var(--r, 24px);
+    background: transparent;
+    box-shadow: 0 8px 32px rgba(0,0,0,.35);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 600; letter-spacing: .02em;
+    text-shadow: 0 1px 2px rgba(0,0,0,.5);
+  }
+  /* order matters: blur and saturate the backdrop first, then bend it.
+     doing the lens first smears the refraction into mush. */
+  .panel.on {
+    backdrop-filter: blur(var(--b, 2px)) saturate(var(--sat, 1.2)) var(--glass);
+    -webkit-backdrop-filter: blur(var(--b, 2px)) saturate(var(--sat, 1.2)) var(--glass);
+  }
+  .panel.on.legacyorder {
+    backdrop-filter: var(--glass) blur(var(--b, 2px)) saturate(var(--sat, 1.2));
+    -webkit-backdrop-filter: var(--glass) blur(var(--b, 2px)) saturate(var(--sat, 1.2));
+  }
+  /* inner shadow: the lip of the glass catching a little darkness */
+  .panel.rim::before {
+    content: ""; position: absolute; inset: 0; border-radius: inherit;
+    pointer-events: none;
+    box-shadow: inset 0 1px 1px rgba(255,255,255,calc(var(--rim,.55) * .5)),
+                inset 0 -1px 2px rgba(0,0,0,.25);
+  }
+  /* Apple's rim: a bright hairline that is brightest where the light hits */
+  .panel.rim::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit;
+    pointer-events: none;
+    padding: 1px;
+    background: linear-gradient(var(--lightdir, 145deg),
+      rgba(255,255,255,var(--rim, .55)) 0%,
+      rgba(255,255,255,.06) 38%,
+      rgba(255,255,255,0) 55%,
+      rgba(255,255,255,.10) 78%,
+      rgba(255,255,255,calc(var(--rim, .55) * .45)) 100%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor; mask-composite: exclude;
+  }
+
+  #p1 { left: 6%;  top: 12%; width: 300px; height: 300px; --r: 36px; }
+  #p2 { right: 5%; top: 8%;  width: 360px; height: 66%;   --r: 28px; }
+  #p3 { left: 8%;  bottom: 7%; width: 62%; height: 92px;  --r: 26px; }
+  #p4 { left: 30%; top: 20%; width: 132px; height: 132px; --r: 66px; }
+  #p5 { left: 30%; top: 46%; width: 220px; height: 48px;  --r: 24px; }
+
+  #ui {
+    position: fixed; z-index: 5; left: 12px; top: 12px;
+    width: 268px; padding: 12px 14px;
+    background: rgba(18,18,20,.86); border: 1px solid rgba(255,255,255,.12);
+    border-radius: 12px; backdrop-filter: blur(12px);
+    max-height: calc(100vh - 24px); overflow: auto;
+  }
+  #ui h1 { font-size: 12px; margin: 0 0 10px; opacity: .6; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+  #ui label { display: flex; align-items: center; gap: 8px; margin: 7px 0; font-size: 12px; }
+  #ui label > span:first-child { flex: 0 0 84px; opacity: .75; }
+  #ui input[type=range] { flex: 1; min-width: 0; }
+  #ui output { flex: 0 0 42px; text-align: right; font-variant-numeric: tabular-nums; opacity: .9; }
+  #ui select, #ui button { width: 100%; margin-top: 6px; padding: 5px; background: #26262a; color: #fff; border: 1px solid rgba(255,255,255,.14); border-radius: 7px; font: inherit; }
+  #ui hr { border: 0; border-top: 1px solid rgba(255,255,255,.1); margin: 12px 0; }
+  #mapview { width: 100%; margin-top: 8px; border-radius: 6px; image-rendering: pixelated; background: #111; }
+  .hint { font-size: 11px; opacity: .5; margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<div id="bg"><canvas id="bgc"></canvas></div>
+
+<div id="stage">
+  <div class="panel" id="p1">album</div>
+  <div class="panel" id="p2">now playing</div>
+  <div class="panel" id="p3">playbar</div>
+  <div class="panel" id="p4">●</div>
+  <div class="panel" id="p5">pill</div>
+</div>
+
+<div id="ui">
+  <h1>liquid glass lab</h1>
+
+  <select id="mode">
+    <option value="sdf">SDF lens (new)</option>
+    <option value="reactbits">reactbits ramp (Liquify now)</option>
+    <option value="off">off</option>
+  </select>
+
+  <select id="bgmode">
+    <option value="art">album art (synthetic)</option>
+    <option value="grid">test grid</option>
+    <option value="text">text</option>
+  </select>
+
+  <hr>
+
+  <label><span>height</span><input type="range" id="height" min="2" max="80" step="1" value="18"><output id="height_o"></output></label>
+  <label><span>amount</span><input type="range" id="amount" min="0" max="60" step="0.5" value="14"><output id="amount_o"></output></label>
+  <label><span>superness</span><input type="range" id="superness" min="2" max="8" step="0.1" value="4"><output id="superness_o"></output></label>
+  <label><span>ior</span><input type="range" id="ior" min="1" max="2.5" step="0.01" value="1.5"><output id="ior_o"></output></label>
+  <label><span>dispersion</span><input type="range" id="dispersion" min="0" max="0.3" step="0.005" value="0.06"><output id="dispersion_o"></output></label>
+  <label><span>blur</span><input type="range" id="blur" min="0" max="24" step="0.5" value="2"><output id="blur_o"></output></label>
+  <label><span>saturate</span><input type="range" id="sat" min="1" max="2.5" step="0.05" value="1.2"><output id="sat_o"></output></label>
+  <label><span>rim</span><input type="range" id="rim" min="0" max="1" step="0.02" value="0.55"><output id="rim_o"></output></label>
+  <label><span>light</span><input type="range" id="lightdir" min="0" max="360" step="5" value="145"><output id="lightdir_o"></output></label>
+
+  <label style="gap:6px"><input type="checkbox" id="physical" style="flex:0 0 auto"><span style="flex:1;opacity:.75">physical (Snell + ior)</span></label>
+  <label style="gap:6px"><input type="checkbox" id="legacyorder" style="flex:0 0 auto"><span style="flex:1;opacity:.75">legacy order (lens first)</span></label>
+  <label style="gap:6px"><input type="checkbox" id="clip" style="flex:0 0 auto"><span style="flex:1;opacity:.75">squircle clip-path</span></label>
+
+  <select id="profile">
+    <option value="circular">circular</option>
+    <option value="quadratic">quadratic</option>
+    <option value="smoothstep">smoothstep</option>
+  </select>
+
+  <hr>
+  <div style="opacity:.7;font-size:11px">displacement map (p1)</div>
+  <canvas id="mapview"></canvas>
+  <div class="hint">R = 横方向, G = 縦方向, 128 = 動かさない</div>
+</div>
+
+<svg id="filters" width="0" height="0" aria-hidden="true" style="position:absolute"></svg>
+
+<script>
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const panels = [...document.querySelectorAll('.panel')];
+const ui = {};
+['height','amount','superness','ior','dispersion','blur','sat','rim','lightdir','profile','mode','bgmode','physical','legacyorder','clip'].forEach(id => ui[id] = document.getElementById(id));
+const RANGES = ['height','amount','superness','ior','dispersion','blur','sat','rim','lightdir'];
+
+function opts() {
+  return {
+    height: +ui.height.value,
+    amount: +ui.amount.value,
+    superness: +ui.superness.value,
+    ior: +ui.ior.value,
+    physical: ui.physical.checked,
+    dispersion: +ui.dispersion.value,
+    profile: ui.profile.value,
+    dpr: window.devicePixelRatio || 1,
+  };
+}
+
+function fe(name, attrs) {
+  const n = document.createElementNS(SVG_NS, name);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  return n;
+}
+
+/* One filter per panel: the map has to match that panel's exact size and
+ * radius, otherwise feImage stretches it and the corners lie.
+ *
+ * All three channels share one `scale`; the dispersion lives in the three maps.
+ * See buildSet() for why. */
+function buildFilter(id, hrefs, scale) {
+  const f = fe('filter', {
+    id, 'color-interpolation-filters': 'sRGB',
+    x: '0%', y: '0%', width: '100%', height: '100%',
+  });
+  const chans = [
+    ['Red',   '1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0'],
+    ['Green', '0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0'],
+    ['Blue',  '0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0'],
+  ];
+  chans.forEach(([name, matrix], i) => {
+    const href = hrefs[Math.min(i, hrefs.length - 1)];
+    const im = fe('feImage', { x: '0', y: '0', width: '100%', height: '100%', preserveAspectRatio: 'none', result: 'map' + name });
+    im.setAttribute('href', href);
+    im.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', href);
+    f.appendChild(im);
+    f.appendChild(fe('feDisplacementMap', {
+      in: 'SourceGraphic', in2: 'map' + name, scale: String(scale),
+      xChannelSelector: 'R', yChannelSelector: 'G', result: 'd' + name,
+    }));
+    f.appendChild(fe('feColorMatrix', { in: 'd' + name, type: 'matrix', values: matrix, result: name.toLowerCase() }));
+  });
+  f.appendChild(fe('feBlend', { in: 'red', in2: 'green', mode: 'screen', result: 'rg' }));
+  f.appendChild(fe('feBlend', { in: 'rg', in2: 'blue', mode: 'screen' }));
+  return f;
+}
+
+function radiusOf(el) {
+  return parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
+}
+
+function rebuild() {
+  const defs = document.getElementById('filters');
+  defs.textContent = '';
+  const o = opts();
+  const mode = ui.mode.value;
+
+  panels.forEach((el, i) => {
+    el.classList.toggle('on', mode !== 'off');
+    el.classList.toggle('rim', mode !== 'off');
+    el.classList.toggle('legacyorder', ui.legacyorder.checked);
+    el.style.setProperty('--b', ui.blur.value + 'px');
+    el.style.setProperty('--sat', ui.sat.value);
+    el.style.setProperty('--rim', ui.rim.value);
+    el.style.setProperty('--lightdir', ui.lightdir.value + 'deg');
+    if (mode === 'off') { el.style.removeProperty('--glass'); return; }
+
+    const r = el.getBoundingClientRect();
+    el.style.clipPath = ui.clip.checked
+      ? LiquidGlassMaps.squirclePath(r.width, r.height, radiusOf(el), +ui.superness.value)
+      : '';
+    const id = 'lab-glass-' + i;
+    let href, scale;
+
+    if (mode === 'sdf') {
+      const built = LiquidGlassMaps.buildSet(r.width, r.height,
+        Object.assign({}, o, { radius: radiusOf(el) }));
+      href = built.urls;
+      scale = built.scale;
+      window.__lastScale = scale;
+      if (i === 0) {
+        const mv = document.getElementById('mapview');
+        mv.width = built.preview.width; mv.height = built.preview.height;
+        mv.getContext('2d').drawImage(built.preview, 0, 0);
+      }
+    } else {
+      const built = LiquidGlassMaps.reactbits(r.width, r.height, { radius: radiusOf(el) });
+      href = [built.url];
+      scale = -80;   // Liquify's distortionScale
+    }
+
+    defs.appendChild(buildFilter(id, href, scale));
+    el.style.setProperty('--glass', `url(#${id})`);
+  });
+}
+
+/* ---- backdrops ---------------------------------------------------------- */
+
+function drawBackdrop() {
+  const cv = document.getElementById('bgc');
+  const dpr = window.devicePixelRatio || 1;
+  const W = cv.width = Math.round(innerWidth * dpr);
+  const H = cv.height = Math.round(innerHeight * dpr);
+  const c = cv.getContext('2d');
+  const kind = ui.bgmode.value;
+
+  if (kind === 'grid') {
+    c.fillStyle = '#101014'; c.fillRect(0, 0, W, H);
+    const s = 24 * dpr;
+    for (let y = 0; y < H; y += s) for (let x = 0; x < W; x += s) {
+      c.fillStyle = ((x / s + y / s) & 1) ? '#f5f5f7' : '#1b1b20';
+      c.fillRect(x, y, s, s);
+    }
+    c.strokeStyle = '#ff3b30'; c.lineWidth = 2 * dpr;
+    for (let x = 0; x < W; x += s * 5) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, H); c.stroke(); }
+    for (let y = 0; y < H; y += s * 5) { c.beginPath(); c.moveTo(0, y); c.lineTo(W, y); c.stroke(); }
+    return;
+  }
+
+  if (kind === 'text') {
+    c.fillStyle = '#0d0d10'; c.fillRect(0, 0, W, H);
+    c.fillStyle = '#e8e8ee';
+    c.font = `${15 * dpr}px ui-monospace, monospace`;
+    const line = 'the quick brown fox jumps over the lazy dog 0123456789 ';
+    for (let y = 24 * dpr; y < H; y += 24 * dpr) c.fillText(line.repeat(6), 12 * dpr, y);
+    return;
+  }
+
+  // synthetic album art: big soft colour fields plus hard edges, which is what
+  // makes refraction readable
+  const g = c.createLinearGradient(0, 0, W, H);
+  g.addColorStop(0, '#2a1b4d'); g.addColorStop(.5, '#7a2d5c'); g.addColorStop(1, '#0d2b3e');
+  c.fillStyle = g; c.fillRect(0, 0, W, H);
+
+  const blobs = [
+    [0.22, 0.30, 0.30, '#ff5f6d'], [0.72, 0.24, 0.26, '#ffc371'],
+    [0.55, 0.72, 0.34, '#22d3ee'], [0.12, 0.80, 0.22, '#a78bfa'],
+    [0.88, 0.66, 0.20, '#34d399'],
+  ];
+  for (const [bx, by, br, col] of blobs) {
+    const rr = br * Math.min(W, H);
+    const rg = c.createRadialGradient(bx * W, by * H, 0, bx * W, by * H, rr);
+    rg.addColorStop(0, col + 'cc'); rg.addColorStop(1, col + '00');
+    c.fillStyle = rg; c.beginPath(); c.arc(bx * W, by * H, rr, 0, Math.PI * 2); c.fill();
+  }
+  c.strokeStyle = 'rgba(255,255,255,.5)'; c.lineWidth = 3 * dpr;
+  for (let i = 0; i < 26; i++) {
+    const y = (i + .5) * H / 26;
+    c.beginPath(); c.moveTo(0, y); c.lineTo(W, y + Math.sin(i) * 40 * dpr); c.stroke();
+  }
+  c.fillStyle = 'rgba(0,0,0,.55)';
+  c.font = `700 ${74 * dpr}px ui-sans-serif, system-ui`;
+  c.fillText('ALBUM', 0.30 * W, 0.55 * H);
+}
+
+/* ---- wiring ------------------------------------------------------------- */
+
+function syncOutputs() {
+  for (const id of RANGES) {
+    const o = document.getElementById(id + '_o');
+    if (o) o.value = ui[id].value;
+  }
+}
+
+for (const id of RANGES.concat(['profile','mode','physical','legacyorder','clip'])) {
+  ui[id].addEventListener('input', () => { syncOutputs(); rebuild(); });
+}
+ui.bgmode.addEventListener('input', drawBackdrop);
+addEventListener('resize', () => { drawBackdrop(); rebuild(); });
+
+syncOutputs();
+drawBackdrop();
+rebuild();
+</script>
+</body>
+</html>
