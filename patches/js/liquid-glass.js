@@ -53,7 +53,7 @@
      * (e-10451-box--interactive), so match the part that does not change.
      * .main-card-card is the older markup and no longer exists here. */
     ['[class*="box--interactive"]', '.main-card-card'].forEach(function (sel) {
-      TARGETS.push({ selector: sel, radius: 20, ca: true });
+      TARGETS.push({ selector: sel, radius: 20, ca: true, notInside: '.Root__nav-bar' });
     });
 
     /* Controls the theme's list misses: the icons at the top right, and the
@@ -1027,6 +1027,10 @@
       try { els = document.querySelectorAll(t.selector); } catch (e) { continue; }
       for (var j = 0; j < els.length && out.length < MAX_ELEMENTS; j++) {
         var el = els[j];
+        /* A selector broad enough to catch every shelf card also catches the
+         * library rows, which are rows and not cards: a frame around each of
+         * their covers turns the left pane into a grid of boxes. */
+        if (t.notInside && el.closest(t.notInside)) continue;
         var cs = getComputedStyle(el);
         /* A surface pinned inside a scroller has the list passing underneath
          * it, and the canvas only knows the wallpaper - it would blur a static
@@ -1146,6 +1150,20 @@
     }
   }
 
+  /* A control whose contents are all transparent is waiting for a hover. The
+   * shelves' carousel arrows are like this: the button is there at full
+   * opacity, the arrow inside it is not, so drawing its frame left an empty
+   * glass box sitting at the edge of every shelf. Only small surfaces are
+   * checked - a panel is not hidden just because its children happen to be. */
+  function contentIsHidden(el) {
+    var kids = el.querySelectorAll('*');
+    if (!kids.length) return false;
+    for (var i = 0; i < kids.length && i < 8; i++) {
+      if (+getComputedStyle(kids[i]).opacity > 0.02) return false;
+    }
+    return true;
+  }
+
   /* Full screen fills the window with Spotify's own layout. Drawing the usual
    * set on top of it covered everything; drawing nothing left it plain. What it
    * wants is one sheet of glass: the cinema panel itself, and nothing else. */
@@ -1205,6 +1223,7 @@
       var op = +getComputedStyle(m.el).opacity;
       if (!(op > 0.02)) { drop(m); continue; }
       var r = m.el.getBoundingClientRect();
+      if (Math.max(r.width, r.height) <= 64 && contentIsHidden(m.el)) { drop(m); continue; }
       if (Math.min(r.width, r.height) < MIN_GLASS_SIZE ||
           r.bottom <= 0 || r.top >= window.innerHeight ||
           r.right <= 0 || r.left >= window.innerWidth) { drop(m); continue; }
