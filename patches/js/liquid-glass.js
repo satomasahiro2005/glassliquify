@@ -42,7 +42,8 @@
     height: 24,
     amount: 48,
     depthEffect: 1,
-    dispersion: 0.3,
+    dispersion: 0.14,
+    dispersionCorner: 0,   // 0 = along the whole edge, 1 = Backdrop's corner-only
     brightness: 0,
     contrast: 1,
     saturation: 1.5,
@@ -55,6 +56,9 @@
 
   // ---- shaders ------------------------------------------------------------
 
+  /* No y flip here on purpose. Everything is rendered into an offscreen target
+   * that is also sampled, so pixel y and texture row have to agree; the flip
+   * happens once, in the final blit to the canvas. */
   var VERT = [
     '#version 300 es',
     'in vec2 aPos;',
@@ -65,8 +69,28 @@
     '  vec2 pix = uRect.xy + aPos * uRect.zw;',
     '  vPix = pix;',
     '  vec2 clip = (pix / uCanvas) * 2.0 - 1.0;',
-    '  gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);',
+    '  gl_Position = vec4(clip, 0.0, 1.0);',
     '}',
+  ].join('\n');
+
+  var QUAD_VERT = [
+    '#version 300 es',
+    'in vec2 aPos;',
+    'out vec2 vUv;',
+    'uniform float uFlip;',
+    'void main() {',
+    '  vUv = vec2(aPos.x, mix(aPos.y, 1.0 - aPos.y, uFlip));',
+    '  gl_Position = vec4(aPos * 2.0 - 1.0, 0.0, 1.0);',
+    '}',
+  ].join('\n');
+
+  var QUAD_FRAG = [
+    '#version 300 es',
+    'precision highp float;',
+    'in vec2 vUv;',
+    'out vec4 outColor;',
+    'uniform sampler2D uTex;',
+    'void main() { outColor = texture(uTex, vUv); }',
   ].join('\n');
 
   var FRAG = [
@@ -83,6 +107,7 @@
     'uniform float uRefractionAmount;',
     'uniform float uDepthEffect;',
     'uniform float uDispersion;',
+    'uniform float uDispersionCorner;',
     'uniform float uBrightness;',
     'uniform float uContrast;',
     'uniform float uSaturation;',
@@ -143,7 +168,12 @@
     '    vec2 grad = normalize(gradSdRoundedRect(centered, halfSize, gradRadius, uSuperness)',
     '                          + uDepthEffect * normalize(centered + 1e-6));',
     '    refracted = vPix + d * grad;',
-    '    float di = uDispersion * ((centered.x * centered.y) / (halfSize.x * halfSize.y));',
+    '    // Backdrop weights dispersion by (x*y)/(hw*hh), which is exactly zero',
+    '    // along both axes - so it only ever shows near the corners. The',
+    '    // shows along the whole edge, including the middle of the horizontal',
+    '    // one, where that term vanishes. uDispersionCorner picks between them.',
+    '    float uv = (centered.x * centered.y) / (halfSize.x * halfSize.y);',
+    '    float di = uDispersion * mix(1.0, uv, uDispersionCorner);',
     '    dispersed = d * grad * di;',
     '  }',
     '  vec4 color = vec4(0.0);',
@@ -190,60 +220,144 @@
     return sh;
   }
 
+  function link(gl, vs, fs) {
+    var p = gl.createProgram();
+    gl.attachShader(p, compile(gl, gl.VERTEX_SHADER, vs));
+    gl.attachShader(p, compile(gl, gl.FRAGMENT_SHADER, fs));
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    return p;
+  }
+
+  /* The canvas is the whole background-and-glass layer, drawn back to front:
+   * wallpaper first, then every glass surface in paint order, each one sampling
+   * what has already been drawn. That is what lets a card refract the panel it
+   * sits on instead of the wallpaper two layers down.
+   *
+   * Sampling what we are drawing into needs two surfaces: render into `rt`,
+   * then copy the touched rectangle into `sample` before the next quad reads
+   * it. GL cannot read and write one texture in a single draw. */
   function Renderer(canvas) {
     var gl = canvas.getContext('webgl2', { premultipliedAlpha: true, alpha: true });
     if (!gl) throw new Error('WebGL2 unavailable');
     this.gl = gl;
-    var p = gl.createProgram();
-    gl.attachShader(p, compile(gl, gl.VERTEX_SHADER, VERT));
-    gl.attachShader(p, compile(gl, gl.FRAGMENT_SHADER, FRAG));
-    gl.linkProgram(p);
-    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
-    this.prog = p;
+    this.prog = link(gl, VERT, FRAG);
+    this.quad = link(gl, QUAD_VERT, QUAD_FRAG);
 
     var buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1]), gl.STATIC_DRAW);
-    var loc = gl.getAttribLocation(p, 'aPos');
     this.vao = gl.createVertexArray();
     gl.bindVertexArray(this.vao);
-    gl.enableVertexAttribArray(loc);
-    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    var a = gl.getAttribLocation(this.prog, 'aPos');
+    gl.enableVertexAttribArray(a);
+    gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
     gl.bindVertexArray(null);
 
-    this.tex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    this.wall = this.makeTex();     // the wallpaper
+    this.sample = this.makeTex();   // what the next quad reads
+    this.rt = this.makeTex();       // what we draw into
+    this.fbo = gl.createFramebuffer();
+    this.size = [0, 0];
+
+    this.u = {};
+    ['uCanvas','uRect','uRadii','uSuperness','uRefractionHeight','uRefractionAmount',
+     'uDepthEffect','uDispersion','uDispersionCorner','uBrightness','uContrast','uSaturation',
+     'uSurface','uHighlight','uHlAngle','uHlFalloff','uHlWidth','uBackdrop'
+    ].forEach(function (n) { this.u[n] = gl.getUniformLocation(this.prog, n); }, this);
+    this.uq = {
+      uTex: gl.getUniformLocation(this.quad, 'uTex'),
+      uFlip: gl.getUniformLocation(this.quad, 'uFlip'),
+    };
+  }
+
+  Renderer.prototype.makeTex = function () {
+    var gl = this.gl;
+    var t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
+  };
 
-    this.u = {};
-    ['uCanvas','uRect','uRadii','uSuperness','uRefractionHeight','uRefractionAmount',
-     'uDepthEffect','uDispersion','uBrightness','uContrast','uSaturation',
-     'uSurface','uHighlight','uHlAngle','uHlFalloff','uHlWidth','uBackdrop'
-    ].forEach(function (n) { this.u[n] = gl.getUniformLocation(p, n); }, this);
-  }
+  Renderer.prototype.resize = function (W, H) {
+    if (this.size[0] === W && this.size[1] === H) return;
+    var gl = this.gl;
+    [this.sample, this.rt].forEach(function (t) {
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    }, this);
+    this.size = [W, H];
+  };
 
   Renderer.prototype.setBackdrop = function (src) {
     var gl = this.gl;
-    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    gl.bindTexture(gl.TEXTURE_2D, this.wall);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);   // canvas row 0 is the top
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  };
+
+  Renderer.prototype.blit = function (tex, flip) {
+    var gl = this.gl;
+    gl.useProgram(this.quad);
+    gl.bindVertexArray(this.vao);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.uniform1i(this.uq.uTex, 0);
+    gl.uniform1f(this.uq.uFlip, flip ? 1 : 0);
+    gl.disable(gl.BLEND);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
   };
 
   Renderer.prototype.begin = function () {
     var gl = this.gl;
-    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
+    var W = gl.canvas.width, H = gl.canvas.height;
+    this.resize(W, H);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.rt, 0);
+    gl.viewport(0, 0, W, H);
+
+    // the wallpaper is the bottom of the stack
+    this.blit(this.wall, false);
+    gl.bindTexture(gl.TEXTURE_2D, this.sample);
+    gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 0, 0, W, H);
+
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.useProgram(this.prog);
     gl.bindVertexArray(this.vao);
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    gl.bindTexture(gl.TEXTURE_2D, this.sample);
     gl.uniform1i(this.u.uBackdrop, 0);
-    gl.uniform2f(this.u.uCanvas, gl.canvas.width, gl.canvas.height);
+    gl.uniform2f(this.u.uCanvas, W, H);
+  };
+
+  /* Copy what was just drawn back into the texture the next quad reads. Only
+   * the touched rectangle, padded by the refraction reach so a neighbouring
+   * surface can still bend the edge of this one. */
+  Renderer.prototype.commit = function (rect, pad) {
+    var gl = this.gl;
+    var W = this.size[0], H = this.size[1];
+    var x = Math.max(0, Math.floor(rect.x - pad));
+    var y = Math.max(0, Math.floor(rect.y - pad));
+    var w = Math.min(W - x, Math.ceil(rect.w + pad * 2));
+    var h = Math.min(H - y, Math.ceil(rect.h + pad * 2));
+    if (w <= 0 || h <= 0) return;
+    gl.bindTexture(gl.TEXTURE_2D, this.sample);
+    gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, x, y, x, y, w, h);
+  };
+
+  Renderer.prototype.end = function () {
+    var gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    this.blit(this.rt, true);   // the one and only y flip
   };
 
   Renderer.prototype.draw = function (rect, o) {
@@ -255,6 +369,7 @@
     gl.uniform1f(u.uRefractionAmount, -o.amount);
     gl.uniform1f(u.uDepthEffect, o.depthEffect);
     gl.uniform1f(u.uDispersion, o.dispersion);
+    gl.uniform1f(u.uDispersionCorner, o.dispersionCorner);
     gl.uniform1f(u.uBrightness, o.brightness);
     gl.uniform1f(u.uContrast, o.contrast);
     gl.uniform1f(u.uSaturation, o.saturation);
@@ -271,10 +386,15 @@
   /* .liquify-bg-layer is the album art at background-size:cover, centred,
    * with filter: blur(--liquify-bg-blur, 7px) brightness(--liquify-bg-brightness, 45%).
    * Reproduced here so the shader has real pixels to sample. */
+  /* Liquify's own background uses image_url, which is the 300px cover. Blown up
+   * to a 4K window that is a 13x upscale, and a backdrop that smooth has
+   * nothing left for the lens to bend or the dispersion to separate. The
+   * xlarge variant is 640px; coverSwipe in the same theme already prefers it. */
   function coverUrl() {
-    var raw = window.Spicetify && Spicetify.Player && Spicetify.Player.data &&
-      Spicetify.Player.data.item && Spicetify.Player.data.item.metadata &&
-      Spicetify.Player.data.item.metadata.image_url;
+    var m = window.Spicetify && Spicetify.Player && Spicetify.Player.data &&
+      Spicetify.Player.data.item && Spicetify.Player.data.item.metadata;
+    if (!m) return null;
+    var raw = m.image_xlarge_url || m.image_large_url || m.image_url;
     if (!raw) return null;
     return raw.replace('spotify:image:', 'https://i.scdn.co/image/');
   }
@@ -323,6 +443,39 @@
     });
   }
 
+  /* The shader shapes the glass as a superellipse, but the element itself is
+   * still a circular-arc rounded rect, so the two outlines disagree at the
+   * corners. clip-path puts the element on the same shape.
+   *
+   * n = 4 is the usual stand-in for Apple's continuous-curvature corner; n = 2
+   * is the ordinary arc. */
+  function squirclePath(w, h, radius, n, steps) {
+    n = n || 4; steps = steps || 16;
+    var r = Math.min(radius, Math.min(w, h) / 2);
+    if (r <= 0.5) return '';
+    var pts = [];
+    var corners = [[w - r, h - r, 1, 1], [r, h - r, -1, 1], [r, r, -1, -1], [w - r, r, 1, -1]];
+    for (var c = 0; c < 4; c++) {
+      var cx = corners[c][0], cy = corners[c][1], sx = corners[c][2], sy = corners[c][3];
+      var back = sx * sy < 0;   // walking clockwise, half the corners run backwards
+      for (var i = 0; i <= steps; i++) {
+        var u = back ? (steps - i) : i;
+        var t = (u / steps) * (Math.PI / 2);
+        var ex = Math.pow(Math.cos(t), 2 / n);
+        var ey = Math.pow(Math.sin(t), 2 / n);
+        pts.push((cx + sx * r * ex).toFixed(1) + 'px ' + (cy + sy * r * ey).toFixed(1) + 'px');
+      }
+    }
+    return 'polygon(' + pts.join(',') + ')';
+  }
+
+  function applySquircle(el, w, h, radius, n) {
+    var key = (w | 0) + 'x' + (h | 0) + 'r' + (radius | 0) + 'n' + n;
+    if (el.__lgClip === key) return;
+    el.__lgClip = key;
+    el.style.clipPath = squirclePath(w, h, radius, n);
+  }
+
   // ---- wiring -------------------------------------------------------------
 
   var canvas, renderer, currentUrl = null, pending = false, haveBackdrop = null;
@@ -350,7 +503,7 @@
     canvas = document.createElement('canvas');
     canvas.id = 'liquify-lg-canvas';
     canvas.style.cssText =
-      'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;';
+      'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:0;';
     var root = document.querySelector('.Root__top-container') || document.body;
     root.appendChild(canvas);
     renderer = new Renderer(canvas);
@@ -372,9 +525,11 @@
     // draws on top of the refraction.
     st.textContent =
       '[data-liquify-lg]{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
-      'background-color:transparent!important;position:relative;z-index:2;}' +
-      '[data-liquify-lg]::before{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;}' +
-      '#liquify-lg-canvas{z-index:1;}';
+      'background-color:transparent!important;}' +
+      '[data-liquify-lg]::before{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
+      'background:transparent!important;}' +
+      /* the canvas draws the wallpaper, so the theme's own layers would double it */
+      '.liquify-bg-layer,.liquify-animated-bg{display:none!important;}';
     document.head.appendChild(st);
   }
 
@@ -405,6 +560,8 @@
     if (!enabled) {
       document.querySelectorAll('[data-liquify-lg]').forEach(function (el) {
         el.removeAttribute('data-liquify-lg');
+        el.style.clipPath = '';
+        el.__lgClip = null;
       });
     }
     if (!quiet) flash(enabled ? 'liquid glass: ON' : 'liquid glass: OFF (Liquify 標準)');
@@ -426,6 +583,13 @@
         out.push({ el: els[j], t: t });
       }
     }
+    // back to front, so a card samples the shelf it sits on
+    out.sort(function (a, b) {
+      var rel = a.el.compareDocumentPosition(b.el);
+      if (rel & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+      if (rel & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+      return 0;
+    });
     matched = out;
   }
 
@@ -440,17 +604,15 @@
     drawn = 0;
     for (var i = 0; i < matched.length; i++) {
       var m = matched[i];
-      if (!m.el.isConnected) { continue; }
+      if (!m.el.isConnected) continue;
       var r = m.el.getBoundingClientRect();
-      var ok = r.width >= 2 && r.height >= 2 &&
-               r.bottom > 0 && r.top < window.innerHeight &&
-               r.right > 0 && r.left < window.innerWidth &&
-               backdropIsKnown(r);
-
+      if (r.width < 4 || r.height < 4) continue;
+      if (r.bottom <= 0 || r.top >= window.innerHeight || r.right <= 0 || r.left >= window.innerWidth) {
+        if (m.el.hasAttribute('data-liquify-lg')) m.el.removeAttribute('data-liquify-lg');
+        continue;
+      }
       var cs = getComputedStyle(m.el);
-      if (ok && (cs.visibility === 'hidden' || cs.display === 'none' || +cs.opacity === 0)) ok = false;
-
-      if (!ok) {
+      if (cs.visibility === 'hidden' || cs.display === 'none' || +cs.opacity === 0) {
         if (m.el.hasAttribute('data-liquify-lg')) m.el.removeAttribute('data-liquify-lg');
         continue;
       }
@@ -461,20 +623,26 @@
       var cssR = parseFloat(cs.borderTopLeftRadius);
       if (!isNaN(cssR) && cssR > 0) radius = cssR;
 
-      // a big lens on a small chip looks wrong; scale it to what fits
+      // a full-size lens on a small chip looks wrong; scale it to what fits
       var minDim = Math.min(r.width, r.height);
       var scale = Math.min(1, minDim / 96);
 
-      renderer.draw({
+      applySquircle(m.el, r.width, r.height, Math.min(radius, minDim / 2), DEFAULTS.superness);
+
+      var rect = {
         x: r.left * dpr, y: r.top * dpr, w: r.width * dpr, h: r.height * dpr,
         r: Math.min(radius, minDim / 2) * dpr,
-      }, Object.assign({}, DEFAULTS, {
+      };
+      renderer.draw(rect, Object.assign({}, DEFAULTS, {
         height: DEFAULTS.height * scale * dpr,
         amount: DEFAULTS.amount * scale * dpr,
         hlWidth: DEFAULTS.hlWidth * dpr,
         dispersion: m.t.ca ? DEFAULTS.dispersion : 0,
       }));
+      // hand this surface to whatever is drawn on top of it
+      renderer.commit(rect, DEFAULTS.amount * dpr + 2);
     }
+    renderer.end();
   }
 
   function loop() {
@@ -549,8 +717,33 @@
       }
     }, true);
 
+    /* A high-contrast backdrop, for checking that refraction and dispersion
+     * are actually doing something. Over a flat wallpaper both are invisible
+     * by construction: shifting the sample position on a uniform colour
+     * returns the same colour. */
+    function testBackdrop(on) {
+      if (!on) { haveBackdrop = null; refreshBackdrop(); return 'restored'; }
+      var d = window.devicePixelRatio || 1;
+      var W = Math.round(window.innerWidth * d), H = Math.round(window.innerHeight * d);
+      var cv = document.createElement('canvas');
+      cv.width = W; cv.height = H;
+      var c = cv.getContext('2d');
+      var sz = 24 * d;
+      for (var y = 0; y < H; y += sz) {
+        for (var x = 0; x < W; x += sz) {
+          c.fillStyle = ((x / sz + y / sz) & 1) ? '#ffffff' : '#101014';
+          c.fillRect(x, y, sz, sz);
+        }
+      }
+      renderer.setBackdrop(cv);
+      haveBackdrop = 'test';
+      render();
+      return 'test pattern';
+    }
+
     window.liquifyLG = {
       render: render, refresh: refreshBackdrop, rescan: rescan,
+      testBackdrop: testBackdrop, renderer: renderer,
       defaults: DEFAULTS, targets: TARGETS,
       count: function () { return { matched: matched.length, drawn: drawn }; },
       toggle: function () { setEnabled(!enabled); return enabled; },
