@@ -55,6 +55,16 @@
     '.NJh1B8rnlSUlK7sY', '.main-topBar-buddyFeed', '.main-userWidget-box',
   ];
 
+  /* Full screen is one big sheet. Frosting it to the same degree as a context
+   * menu buries the wallpaper - at that size a light haze is enough to separate
+   * the panel from what is behind it. */
+  var CINEMA_STYLE = {
+    blurMix: 0.22,
+    dispersion: 0.4,
+    surface: [1, 1, 1, 0.05],
+    hlAlpha: 0.5,
+  };
+
   // frosted rather than clear: overlays want separation from what is under them
   var OVERLAY_STYLE = {
     blurMix: 1,
@@ -730,7 +740,13 @@
        * pre-blurred. This belongs here rather than in the theme's CSS: with it
        * in user.css the toggle's off state was not the untouched theme either,
        * which made any comparison meaningless. */
-      ':root{--liquify-bg-blur:0px!important;}';
+      ':root{--liquify-bg-blur:0px!important;}' +
+      /* Full screen puts the now-playing sections in a row underneath the
+       * cover, but the panel ends before the row does: the row starts 72px
+       * inside it and then runs off the bottom of the window. Nothing about it
+       * is reachable, so it only shows as content bleeding through the sheet.
+       * Measured at 1600x900: panel 8,64 1584x727, row 8,719 1584x408. */
+      '.Root__cinema-view .main-nowPlayingView-section{display:none!important;}';
     document.head.appendChild(st);
   }
 
@@ -855,6 +871,37 @@
    * a scroll, a resize, a rescan, or the slow safety tick. */
   function markDirty() { dirty = true; }
 
+  function drawCinema(el) {
+    var dpr = window.devicePixelRatio || 1;
+    var W = Math.round(window.innerWidth * dpr);
+    var H = Math.round(window.innerHeight * dpr);
+    if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+
+    var r = el.getBoundingClientRect();
+    if (r.width < 4 || r.height < 4) return;
+    if (!el.hasAttribute('data-liquify-lg')) {
+      el.setAttribute('data-liquify-lg', '');
+      el.style.setProperty('box-shadow', 'none', 'important');
+      el.style.setProperty('border-color', 'transparent', 'important');
+    }
+    var radius = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 20;
+    radius = Math.min(radius, Math.min(r.width, r.height) / 2);
+
+    renderer.begin();
+    renderer.scissor(null);
+    var rect = {
+      x: r.left * dpr, y: r.top * dpr, w: r.width * dpr, h: r.height * dpr,
+      r: radius * dpr
+    };
+    renderer.draw(rect, Object.assign({}, DEFAULTS, CINEMA_STYLE, {
+      height: DEFAULTS.height * dpr,
+      amount: DEFAULTS.amount * dpr,
+      hlWidth: DEFAULTS.hlWidth * dpr
+    }));
+    renderer.end();
+    drawn = 1;
+  }
+
   function drop(m) {
     if (m.el.hasAttribute && m.el.hasAttribute('data-liquify-lg')) {
       m.el.removeAttribute('data-liquify-lg');
@@ -865,23 +912,25 @@
     }
   }
 
-  /* Full screen is Spotify's own presentation: it fills the window with the
-   * cover and its own background. Drawing over that put the canvas on top of
-   * the whole thing and left the nav row and a stray panel visible. Stand down
-   * while it is up. */
-  function cinemaOpen() {
+  /* Full screen fills the window with Spotify's own layout. Drawing the usual
+   * set on top of it covered everything; drawing nothing left it plain. What it
+   * wants is one sheet of glass: the cinema panel itself, and nothing else. */
+  function cinemaPanel() {
     var c = document.querySelector('.Root__cinema-view');
-    return !!(c && c.getBoundingClientRect().width > 0);
+    if (!c) return null;
+    var r = c.getBoundingClientRect();
+    return (r.width > 0 && r.height > 0) ? c : null;
   }
 
   function render(force) {
     if (!renderer) return;
-    if (cinemaOpen()) {
+
+    var cinema = cinemaPanel();
+    if (cinema !== null) {
       if (!wasCinema) {
         wasCinema = true;
-        setStyle(false);
-        if (canvas) canvas.style.display = 'none';
         document.querySelectorAll('[data-liquify-lg],[data-liquify-lg-plain]').forEach(function (el) {
+          if (el === cinema) return;
           el.removeAttribute('data-liquify-lg');
           el.removeAttribute('data-liquify-lg-plain');
           el.style.removeProperty('box-shadow');
@@ -889,13 +938,14 @@
           el.style.clipPath = '';
           el.__lgClip = null;
         });
+        force = true;
       }
+      if (canvas.style.display === 'none' && enabled) canvas.style.display = '';
+      drawCinema(cinema);
       return;
     }
     if (wasCinema) {
       wasCinema = false;
-      setStyle(enabled);
-      if (canvas) canvas.style.display = enabled ? '' : 'none';
       rescan();
       force = true;
     }
