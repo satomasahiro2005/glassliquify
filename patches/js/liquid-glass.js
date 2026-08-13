@@ -42,10 +42,32 @@
      * frosted end of the material: they are asking for attention, and reading
      * a dialog over a sharp wallpaper is hard. Marked here rather than left to
      * the theme, whose own blur is the one being replaced. */
-    for (var i = 0; i < TARGETS.length; i++) {
-      TARGETS[i].overlay = OVERLAYS.indexOf(TARGETS[i].selector) >= 0;
-    }
+    TARGETS = TARGETS.filter(function (t) {
+      return OVERLAYS.indexOf(t.selector) < 0;
+    });
   }
+
+  /* Two different kinds of surface, so two different treatments.
+   *
+   * A dialog stops the app and has to be read: it wants a lot of blur, enough
+   * that whatever is behind it stops competing with its text. A card that
+   * floats over the page for a few seconds wants the opposite - stay light, do
+   * not swallow what it is sitting on.
+   *
+   * Both are left exactly as the theme draws them. The backdrop behind them is
+   * the app's own content, which this canvas does not have; only a real
+   * backdrop-filter can read it, and the theme's is already doing that. */
+  var DIALOGS = [
+    '.liquifySettingsPanel', '.liquifySelectMenu', 'dialog',
+    '.main-playlistEditDetailsModal-container', '.main-trackCreditsModal-container',
+    '.main-embedWidgetGenerator-container', '#marketplace-readme',
+  ];
+
+  var FLOATERS = [
+    '#liquify-next-song-card', '.main-contextMenu-menu', '.main-contextMenu-tippy',
+    '.Dropdown-menu', '.xamNkt5LX9o8aL1q', '.zddkQq3wlxEOg6aa', '.NJh1B8rnlSUlK7sY',
+    '.main-topBar-buddyFeed', '.main-userWidget-box',
+  ];
 
   var OVERLAYS = [
     '.liquifySettingsPanel', '.liquifySelectMenu', 'dialog',
@@ -66,19 +88,14 @@
     hlAlpha: 0.5,
   };
 
-  /* Overlays carry text over whatever the wallpaper happens to be, so they get
-   * the legibility treatment rather than the clear one: crush the backdrop's
-   * contrast, pull its brightness down and lay a dark sheet over it. Adding
-   * white instead raises the floor and white text disappears into it - measured
-   * that way round first. */
-  var OVERLAY_STYLE = {
-    blurMix: 1,
-    dispersion: 0,
-    brightness: -0.12,
-    contrast: 0.65,
-    surface: [0.06, 0.06, 0.08, 0.55],
-    hlAlpha: 0.5,
-  };
+  /* Overlays are handed back to the theme, not drawn here.
+   *
+   * What sits behind a dialog is the app's own content - cards, text, artwork -
+   * and this canvas only knows the wallpaper and the sheets drawn into it. Take
+   * the dialog's own fill away and the page shows straight through it: the
+   * settings modal came out with Daily Mix tiles legible across its labels.
+   * A real backdrop-filter reads the composited backdrop, so for these the
+   * theme's own glass is the only thing that can work. */
 
   /* Below this, a control's visible shape is its own background rather than
    * anything glass can stand in for - the carousel arrows on Home disappeared
@@ -861,7 +878,7 @@
          * image while the real content slides past. Those keep the theme's own
          * backdrop-filter, which reads the actual backdrop. Surfaces that
          * scroll along with their backdrop are fine. */
-        if (!t.overlay && (cs.position === 'sticky' || cs.position === 'fixed') && scrollClipOf(el)) {
+        if ((cs.position === 'sticky' || cs.position === 'fixed') && scrollClipOf(el)) {
           /* Handing it back to the theme would leave it frosted while
            * everything around it is clear, which reads as a bug. Strip the
            * treatment instead: the real content shows through untouched. */
@@ -1118,12 +1135,12 @@
         x: it.c.left * dpr, y: it.c.top * dpr, w: it.c.width * dpr, h: it.c.height * dpr
       } : null);
 
-      var opts = Object.assign({}, DEFAULTS, mm.t.overlay ? OVERLAY_STYLE : null, {
+      var opts = Object.assign({}, DEFAULTS, {
         opacity: it.op,
         height: DEFAULTS.height * scale * dpr,
         amount: DEFAULTS.amount * scale * dpr,
         hlWidth: DEFAULTS.hlWidth * dpr,
-        dispersion: mm.t.overlay ? 0 : (mm.t.ca ? DEFAULTS.dispersion : 0)
+        dispersion: mm.t.ca ? DEFAULTS.dispersion : 0
       });
       if (DEFAULTS.adaptive) {
         var ad = adaptTo(rect, dpr);
