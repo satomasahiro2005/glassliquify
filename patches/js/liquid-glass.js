@@ -33,7 +33,36 @@
     TARGETS = raw.map(function (t) {
       return { selector: t.s, radius: t.r, ca: t.ca !== false };
     });
+    /* Our own settings button sits next to Liquify's gear, which is one of the
+     * theme's glass targets. Without this it is the one flat, square-looking
+     * control in the row. */
+    TARGETS.push({ selector: '#liquify-lg-btn', radius: 17, ca: true });
+
+    /* Surfaces that sit on top of the app rather than in it. These want the
+     * frosted end of the material: they are asking for attention, and reading
+     * a dialog over a sharp wallpaper is hard. Marked here rather than left to
+     * the theme, whose own blur is the one being replaced. */
+    for (var i = 0; i < TARGETS.length; i++) {
+      TARGETS[i].overlay = OVERLAYS.indexOf(TARGETS[i].selector) >= 0;
+    }
   }
+
+  var OVERLAYS = [
+    '.liquifySettingsPanel', '.liquifySelectMenu', 'dialog',
+    '.main-contextMenu-menu', '.main-contextMenu-tippy', '.Dropdown-menu',
+    '.Root__cinema-view', '.main-playlistEditDetailsModal-container',
+    '.main-trackCreditsModal-container', '.main-embedWidgetGenerator-container',
+    '#marketplace-readme', '.xamNkt5LX9o8aL1q', '.zddkQq3wlxEOg6aa',
+    '.NJh1B8rnlSUlK7sY', '.main-topBar-buddyFeed', '.main-userWidget-box',
+  ];
+
+  // frosted rather than clear: overlays want separation from what is under them
+  var OVERLAY_STYLE = {
+    blurMix: 1,
+    dispersion: 0,
+    surface: [1, 1, 1, 0.14],
+    hlAlpha: 0.55,
+  };
 
   var MAX_ELEMENTS = 400;   // backstop; drawing is cheap, layout reads are not
 
@@ -340,8 +369,10 @@
 
     // the wallpaper is the bottom of the stack, in both sharp and blurred form
     this.blit(this.wallBlur, false);
+    gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, this.sampleBlur);
     gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 0, 0, W, H);
+    gl.activeTexture(gl.TEXTURE0);
     this.blit(this.wall, false);
     gl.bindTexture(gl.TEXTURE_2D, this.sample);
     gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 0, 0, W, H);
@@ -373,10 +404,19 @@
     if (w <= 0 || h <= 0) return;
     gl.bindTexture(gl.TEXTURE_2D, this.sample);
     gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, x, y, x, y, w, h);
-    // the blurred stack has to follow, or a surface drawn on top of this one
-    // would blur what was here before instead of what is here now
+
+    // The blurred stack has to follow, or a surface drawn on top of this one
+    // would blur what was here before instead of what is here now.
+    //
+    // It gets copied on unit 1, not unit 0. Binding it on unit 0 and walking
+    // away leaves the blurred texture sitting in uBackdrop's unit, so every
+    // surface drawn after the first one reads the blurred copy as its sharp
+    // backdrop - which looks like a grey haze spreading over the panels.
+    gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, this.sampleBlur);
     gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, x, y, x, y, w, h);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.sample);
   };
 
   /* Clips a quad to the box that scrolls it, so glass cannot spill out of its
@@ -561,6 +601,10 @@
     return 'polygon(' + pts.join(',') + ')';
   }
 
+  /* Not used while the elements keep their own borders: a CSS border follows
+   * the element's circular border-radius, so clipping the box to a squircle
+   * puts two differently shaped outlines on top of each other. Kept for the
+   * day the frames are drawn in the shader instead. */
   function applySquircle(el, w, h, radius, n) {
     var key = (w | 0) + 'x' + (h | 0) + 'r' + (radius | 0) + 'n' + n;
     if (el.__lgClip === key) return;
@@ -656,23 +700,15 @@
      * border-radius too, so leaving them in place puts a second,
      * differently-shaped outline on top of the squircle. */
     var sels = TARGETS.map(function (t) { return t.selector; }).join(',');
+    /* Only the theme's own glass comes off: its backdrop-filter (so nothing is
+     * blurred twice) and its fill (so the canvas shows through). Borders and
+     * shadows stay - they are the frames that make the panels readable as
+     * panels, and stripping them left the sections outline-less. */
     st.textContent =
       ':is(' + sels + '){backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
-      'background:none!important;box-shadow:none!important;border-color:transparent!important;}' +
+      'background-image:none!important;background-color:transparent!important;}' +
       ':is(' + sels + ')::before,:is(' + sels + ')::after{' +
-      'backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
-      'background:none!important;box-shadow:none!important;}' +
-      '[data-liquify-lg]{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
-      'background:none!important;border-color:transparent!important;' +
-      'box-shadow:none!important;outline:none!important;}' +
-      '[data-liquify-lg-plain]{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
-      'background:none!important;box-shadow:none!important;}' +
-      '[data-liquify-lg-plain]::before,[data-liquify-lg-plain]::after{' +
-      'backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
-      'background:none!important;}' +
-      '[data-liquify-lg]::before,[data-liquify-lg]::after{' +
-      'backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
-      'background:none!important;box-shadow:none!important;border-color:transparent!important;}' +
+      'backdrop-filter:none!important;-webkit-backdrop-filter:none!important;}' +
       /* the canvas draws the wallpaper, so the theme's own layers would double it */
       '.liquify-bg-layer,.liquify-animated-bg{display:none!important;}' +
       /* The lens bends the wallpaper's detail, so the wallpaper must not be
@@ -751,7 +787,7 @@
          * image while the real content slides past. Those keep the theme's own
          * backdrop-filter, which reads the actual backdrop. Surfaces that
          * scroll along with their backdrop are fine. */
-        if ((cs.position === 'sticky' || cs.position === 'fixed') && scrollClipOf(el)) {
+        if (!t.overlay && (cs.position === 'sticky' || cs.position === 'fixed') && scrollClipOf(el)) {
           /* Handing it back to the theme would leave it frosted while
            * everything around it is clear, which reads as a bug. Strip the
            * treatment instead: the real content shows through untouched. */
@@ -776,7 +812,21 @@
       if (rel & Node.DOCUMENT_POSITION_PRECEDING) return 1;
       return 0;
     });
-    matched = out;
+    /* Nested targets would stack the material: a card inside a shelf inside a
+     * section re-reads pixels that already went through colorControls and the
+     * tint, so saturation compounds (1.5^3) and the white piles up. The result
+     * is a milky haze over exactly the panels that nest. Keep the outermost
+     * and drop its descendants - Apple does not stack glass either. */
+    var kept = [];
+    for (var m = 0; m < out.length; m++) {
+      var nested = false;
+      for (var k = 0; k < kept.length; k++) {
+        if (kept[k].el.contains(out[m].el) && kept[k].el !== out[m].el) { nested = true; break; }
+      }
+      if (!nested) kept.push(out[m]);
+      else out[m].el.setAttribute('data-liquify-lg-plain', '');
+    }
+    matched = kept;
     sig = '';       // force one redraw after a rescan
     dirty = true;
   }
@@ -836,7 +886,6 @@
 
       var minDim = Math.min(rr.width, rr.height);
       var radius = Math.min(mm.radius, minDim / 2);
-      applySquircle(mm.el, rr.width, rr.height, radius, DEFAULTS.superness);
 
       // a full-size lens on a small chip looks wrong; scale it to what fits
       var scale = Math.min(1, minDim / 96);
@@ -850,11 +899,11 @@
         x: it.c.left * dpr, y: it.c.top * dpr, w: it.c.width * dpr, h: it.c.height * dpr
       } : null);
 
-      var opts = Object.assign({}, DEFAULTS, {
+      var opts = Object.assign({}, DEFAULTS, mm.t.overlay ? OVERLAY_STYLE : null, {
         height: DEFAULTS.height * scale * dpr,
         amount: DEFAULTS.amount * scale * dpr,
         hlWidth: DEFAULTS.hlWidth * dpr,
-        dispersion: mm.t.ca ? DEFAULTS.dispersion : 0
+        dispersion: mm.t.overlay ? 0 : (mm.t.ca ? DEFAULTS.dispersion : 0)
       });
       if (DEFAULTS.adaptive) {
         var ad = adaptTo(rect, dpr);
