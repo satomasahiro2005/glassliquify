@@ -699,10 +699,10 @@
    *
    * n = 4 is the usual stand-in for Apple's continuous-curvature corner; n = 2
    * is the ordinary arc. */
-  function squirclePath(w, h, radius, n, steps) {
+  function superPoints(x0, y0, w, h, radius, n, steps) {
     n = n || 4; steps = steps || 16;
     var r = Math.min(radius, Math.min(w, h) / 2);
-    if (r <= 0.5) return '';
+    if (r <= 0.5 || w <= 0 || h <= 0) return null;
     var pts = [];
     var corners = [[w - r, h - r, 1, 1], [r, h - r, -1, 1], [r, r, -1, -1], [w - r, r, 1, -1]];
     for (var c = 0; c < 4; c++) {
@@ -713,10 +713,251 @@
         var t = (u / steps) * (Math.PI / 2);
         var ex = Math.pow(Math.cos(t), 2 / n);
         var ey = Math.pow(Math.sin(t), 2 / n);
-        pts.push((cx + sx * r * ex).toFixed(1) + 'px ' + (cy + sy * r * ey).toFixed(1) + 'px');
+        pts.push([x0 + cx + sx * r * ex, y0 + cy + sy * r * ey]);
       }
     }
-    return 'polygon(' + pts.join(',') + ')';
+    return pts;
+  }
+
+  function squirclePath(w, h, radius, n, steps) {
+    var pts = superPoints(0, 0, w, h, radius, n, steps);
+    if (!pts) return '';
+    return 'polygon(' + pts.map(function (p) {
+      return p[0].toFixed(1) + 'px ' + p[1].toFixed(1) + 'px';
+    }).join(',') + ')';
+  }
+
+  /* The same corner as a ring: the outline as two subpaths with evenodd, so
+   * what is left is the band between them.
+   *
+   * An overlay cannot be drawn by the shader - what is behind it is the app's
+   * own content, which this canvas does not have. Its rim can be, though: the
+   * rim is light added on top and does not read the backdrop at all. Clipping
+   * a gradient to this ring puts the same edge on an overlay as the shader
+   * puts on every panel, which is the part of the material the eye matches. */
+  function superRingPath(w, h, radius, n, ring, steps) {
+    var t = Math.max(0.75, ring);
+    var outer = superPoints(0, 0, w, h, radius, n, steps);
+    var inner = superPoints(t, t, w - 2 * t, h - 2 * t, radius - t, n, steps);
+    if (!outer || !inner) return 'none';
+    function sub(pts) {
+      return 'M' + pts.map(function (p) {
+        return p[0].toFixed(1) + ' ' + p[1].toFixed(1);
+      }).join('L') + 'Z';
+    }
+    return 'path(evenodd, "' + sub(outer) + sub(inner) + '")';
+  }
+
+  /* ---- overlays ----------------------------------------------------------
+   *
+   * An overlay sits on the app's own content, which this canvas does not have,
+   * so the shader cannot draw it. backdrop-filter can: it reads the real
+   * composited backdrop. What it needs is a displacement map, and the one the
+   * theme ships is not one - it is two linear gradients across the whole box,
+   * so it translates the backdrop instead of bending it at the edge.
+   *
+   * This builds the map the lens actually implies: the same superellipse SDF,
+   * the same circleMap falloff, the same gradient direction. Inside the panel
+   * the map is neutral and the backdrop passes straight through; within
+   * `height` of the edge it turns and pushes outward by `amount`.
+   *
+   * Encoding follows feDisplacementMap: the sample offset is
+   * scale * (channel - 0.5), so 0.5 is no displacement and the map is built
+   * against a fixed scale rather than the element's size. */
+  var lensFilters = {};
+
+  function lensMapURL(w, h, radius, n, height, amount, enc, chan, pad) {
+    var cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(w + 2 * pad));
+    cv.height = Math.max(1, Math.round(h + 2 * pad));
+    var ctx = cv.getContext('2d');
+    var img = ctx.createImageData(cv.width, cv.height);
+    var d = img.data;
+    var hw = w / 2, hh = h / 2;
+    /* The map covers the padded region, with the panel centred in it, so every
+     * pixel the filter touches has a value. Outside the shape that value is
+     * neutral - feImage returns nothing beyond its own box, and nothing reads
+     * as a channel of 0, which is a full-scale displacement rather than none. */
+    var cx0 = cv.width / 2, cy0 = cv.height / 2;
+    var r = Math.min(radius, Math.min(hw, hh));
+    for (var y = 0; y < cv.height; y++) {
+      for (var x = 0; x < cv.width; x++) {
+        var px = x + 0.5 - cx0, py = y + 0.5 - cy0;
+        var qx = Math.abs(px) - (hw - r), qy = Math.abs(py) - (hh - r);
+        var sd, gx, gy;
+        if (qx <= 0 || qy <= 0) {
+          sd = Math.max(qx, qy) - r;
+          var alongX = qy <= qx ? 1 : 0;
+          gx = Math.sign(px) * alongX;
+          gy = Math.sign(py) * (1 - alongX);
+        } else {
+          var an = Math.pow(qx, n) + Math.pow(qy, n);
+          sd = Math.pow(an, 1 / n) - r;
+          var vx = Math.pow(qx, n - 1), vy = Math.pow(qy, n - 1);
+          var vl = Math.hypot(vx, vy) || 1;
+          gx = Math.sign(px) * vx / vl;
+          gy = Math.sign(py) * vy / vl;
+        }
+        var dx = 0, dy = 0;
+        if (sd < 0 && -sd < height) {
+          var u = 1 - (-sd) / height;
+          var disp = (1 - Math.sqrt(Math.max(0, 1 - u * u))) * amount;
+          /* Same as the shader: the edge normal plus a pull towards the
+           * centre, so the bend is not purely perpendicular at the corners. */
+          var cl = Math.hypot(px, py) || 1;
+          var ex = gx + px / cl, ey = gy + py / cl;
+          var el = Math.hypot(ex, ey) || 1;
+          /* Dispersion is weighted by (x*y)/(hw*hh), exactly as the shader
+           * does it: zero along both axes, strongest at the corners. chan is
+           * +1 for red, 0 for green, -1 for blue. */
+          var di = 1 + chan * FLOAT_STYLE.dispersion * (px * py) / (hw * hh);
+          dx = disp * ex / el * di;
+          dy = disp * ey / el * di;
+        }
+        var i = (y * cv.width + x) * 4;
+        d[i] = Math.max(0, Math.min(255, Math.round(128 + 127 * dx / enc)));
+        d[i + 1] = Math.max(0, Math.min(255, Math.round(128 + 127 * dy / enc)));
+        d[i + 2] = 128;
+        d[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return cv.toDataURL('image/png');
+  }
+
+  /* A floating card is read, not looked through. The panels are clear because
+   * their backdrop is a wallpaper; a card sits on cards and text, and at this
+   * clarity its own text does not survive. So this one is frosted. */
+  /* Legibility comes from the blur alone. Darkening was tried and is not
+   * needed once the backdrop is soft: the colour stays the app's, which is the
+   * point of glass, and the card does not turn into a grey plate. darken is
+   * kept at 1 rather than removed because it is the knob to reach for if a
+   * light theme ever makes this unreadable again.
+   *
+   * Dispersion is far weaker here than on the panels. The lens is the same but
+   * the surface is not: a context menu is 88px tall, so a band that is a hair
+   * on a column covers a third of it, and three taps at full strength put a
+   * rainbow right round the edge. */
+  var FLOAT_STYLE = { blur: 2, saturation: 1.15, dispersion: 0.2, darken: 1 };
+
+  function lensFilter(w, h, radius) {
+    var n = DEFAULTS.superness;
+    /* Same scaling the draw pass uses: a full-size lens on a small card is not
+     * a lens, it is the whole card. */
+    var s = Math.min(1, Math.min(w, h) / 96);
+    var height = DEFAULTS.height * s, amount = DEFAULTS.amount * s;
+    var key = [w | 0, h | 0, radius.toFixed(1), n, height.toFixed(1), amount.toFixed(1),
+               FLOAT_STYLE.dispersion, FLOAT_STYLE.blur, FLOAT_STYLE.saturation,
+               FLOAT_STYLE.darken].join('_');
+    if (lensFilters[key]) return lensFilters[key];
+
+    var svg = document.getElementById('liquify-lg-filters');
+    if (!svg) {
+      svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.id = 'liquify-lg-filters';
+      svg.setAttribute('width', '0');
+      svg.setAttribute('height', '0');
+      svg.style.cssText = 'position:absolute;width:0;height:0;pointer-events:none';
+      document.body.appendChild(svg);
+    }
+    var id = 'lg-lens-' + key.replace(/[^a-z0-9]/gi, '');
+
+    /* One encode scale for all three maps, and therefore one `scale` on every
+     * feDisplacementMap. Giving each channel its own scale is the obvious way
+     * to do dispersion and it does not work: in Chromium the scale feeds the
+     * primitive subregion, so the channels come out offset from each other
+     * across the whole element rather than only where the map bends. The
+     * per-channel strength is baked into the maps instead. */
+    var enc = amount * (1 + FLOAT_STYLE.dispersion);
+    var chans = [
+      { name: 'R', chan: 1, keep: '1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0' },
+      { name: 'G', chan: 0, keep: '0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0' },
+      { name: 'B', chan: -1, keep: '0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0' },
+    ];
+    var pad = Math.ceil(enc) + 4;
+    var parts = '<feGaussianBlur in="SourceGraphic" stdDeviation="' +
+                FLOAT_STYLE.blur + '" result="lgblur"/>';
+    for (var c = 0; c < chans.length; c++) {
+      var ch = chans[c];
+      var url = lensMapURL(w, h, radius, n, height, amount, enc, ch.chan, pad);
+      parts +=
+        '<feImage href="' + url + '" x="' + (-pad) + '" y="' + (-pad) +
+        '" width="' + (w + 2 * pad) + '" height="' + (h + 2 * pad) +
+        '" result="map' + ch.name + '"/>' +
+        '<feDisplacementMap in="lgblur" in2="map' + ch.name + '" scale="' + (2 * enc) +
+        '" xChannelSelector="R" yChannelSelector="G" result="bent' + ch.name + '"/>' +
+        '<feColorMatrix in="bent' + ch.name + '" type="matrix" values="' + ch.keep +
+        '" result="only' + ch.name + '"/>';
+    }
+    /* Added, not composited: each pass carries one channel and full alpha, so
+     * arithmetic k2 = k3 = 1 puts them back together. Alpha saturates at 1. */
+    parts +=
+      '<feComposite in="onlyR" in2="onlyG" operator="arithmetic" k2="1" k3="1" result="lgrg"/>' +
+      '<feComposite in="lgrg" in2="onlyB" operator="arithmetic" k2="1" k3="1" result="lgrgb"/>' +
+      '<feColorMatrix in="lgrgb" type="saturate" values="' + FLOAT_STYLE.saturation +
+      '" result="lgsat"/>' +
+      '<feColorMatrix in="lgsat" type="matrix" values="' +
+      [FLOAT_STYLE.darken, 0, 0, 0, 0,
+       0, FLOAT_STYLE.darken, 0, 0, 0,
+       0, 0, FLOAT_STYLE.darken, 0, 0,
+       0, 0, 0, 1, 0].join(' ') + '"/>';
+
+    /* The region has to reach past the element. The lens pushes each sample
+     * outward, so the pixels it wants are outside the box; with the region cut
+     * to the box exactly there was nothing there to fetch and the edge came
+     * back smeared instead of bent. What this admits beyond the element is
+     * clipped by the squircle anyway. */
+    svg.insertAdjacentHTML('beforeend',
+      '<filter id="' + id + '" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse"' +
+      ' x="' + (-pad) + '" y="' + (-pad) + '"' +
+      ' width="' + (w + 2 * pad) + '" height="' + (h + 2 * pad) + '"' +
+      ' color-interpolation-filters="sRGB">' +
+      parts + '</filter>');
+    lensFilters[key] = id;
+    return id;
+  }
+
+  var FLOAT_ATTR = 'data-liquify-lg-float';
+
+  /* Only the cards that float over the page. A dialog stops the app and has to
+   * be read, and this material is too clear for that - the settings modal came
+   * out with Daily Mix tiles legible across its labels. Those keep the theme's
+   * own glass. */
+  function styleFloaters() {
+    for (var i = 0; i < FLOATERS.length; i++) {
+      var els;
+      try { els = document.querySelectorAll(FLOATERS[i]); } catch (e) { continue; }
+      for (var j = 0; j < els.length; j++) applyFloat(els[j]);
+    }
+  }
+
+  function applyFloat(el) {
+    /* Layout size, not the painted rect. A context menu animates in with a
+     * transform, so getBoundingClientRect returns whatever it is mid-scale,
+     * while clip-path and the filter's user space are both measured before the
+     * transform. Using the painted rect sized the lens and the clip to a frame
+     * of the animation and left them short of the element. */
+    var w = el.offsetWidth, h = el.offsetHeight;
+    if (w < 16 || h < 16) return;
+    var r = { width: w, height: h };
+    var n = DEFAULTS.superness;
+    var radius = Math.min(uniformRadius(), Math.min(r.width, r.height) / 2);
+    var ring = Math.max(1, DEFAULTS.hlWidth);
+    var key = (r.width | 0) + 'x' + (r.height | 0) + 'r' + radius.toFixed(1) +
+              'n' + n + 'w' + ring + 's' + DEFAULTS.saturation;
+    if (el.__lgFloat === key && el.style.clipPath) return;
+    el.__lgFloat = key;
+
+    el.setAttribute(FLOAT_ATTR, '');
+    if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
+    var id = lensFilter(r.width, r.height, radius);
+    el.style.setProperty('backdrop-filter', 'url(#' + id + ')', 'important');
+    el.style.setProperty('-webkit-backdrop-filter', 'url(#' + id + ')', 'important');
+    el.style.setProperty('clip-path', squirclePath(r.width, r.height, radius, n, 32));
+    el.style.setProperty('--lg-ring', superRingPath(r.width, r.height, radius, n, ring, 32));
+    el.style.setProperty('--lg-rim', String(DEFAULTS.hlAlpha));
+    el.style.setProperty('--lg-rim-floor', String(DEFAULTS.hlFloor * DEFAULTS.hlAlpha));
+    el.style.setProperty('--lg-angle', (90 - DEFAULTS.hlAngle) + 'deg');
   }
 
   /* Not used while the elements keep their own borders: a CSS border follows
@@ -841,6 +1082,23 @@
        * which is what reads as a doubled corner in the right pane. */
       '.Root__right-sidebar,.Root__nav-bar{box-shadow:none!important;' +
       'border-color:transparent!important;}' +
+      /* A floating card is refracted by an SVG lens instead of the shader, but
+       * its rim is the same superellipse ring, drawn as light on top. The
+       * gradient across it stands in for the shader's cos falloff: brightest
+       * where the edge faces the light, never below the floor, so the frame is
+       * continuous the whole way round. */
+      '[data-liquify-lg-float]{border-radius:0!important;box-shadow:none!important;' +
+      'border-color:transparent!important;}' +
+      /* plus-lighter, because the shader adds the rim rather than laying it
+       * over: alpha-blended white on a dark card reads as grey paint, and that
+       * is why the overlay's edge did not look like the panels'. */
+      '[data-liquify-lg-float]::after{content:"";position:absolute;inset:0;' +
+      'pointer-events:none;z-index:2;clip-path:var(--lg-ring);' +
+      'mix-blend-mode:plus-lighter;' +
+      'background:linear-gradient(var(--lg-angle),' +
+      'rgba(255,255,255,var(--lg-rim)) 0%,' +
+      'rgba(255,255,255,var(--lg-rim-floor)) 50%,' +
+      'rgba(255,255,255,var(--lg-rim)) 100%);}' +
       /* The pane header strip sits ~20px inside the pane's own frame and the
        * theme outlines both, so the corner reads as two lines. The strip is the
        * one you actually look at, so the pane's frame is the one that goes. */
@@ -920,6 +1178,14 @@
         el.style.removeProperty('-webkit-backdrop-filter');
         el.__lgRadius = null;
       });
+      document.querySelectorAll('[' + FLOAT_ATTR + ']').forEach(function (el) {
+        el.removeAttribute(FLOAT_ATTR);
+        el.__lgFloat = null;
+        ['backdrop-filter', '-webkit-backdrop-filter', 'clip-path', 'position',
+         '--lg-ring', '--lg-rim', '--lg-rim-floor', '--lg-angle'].forEach(function (p) {
+          el.style.removeProperty(p);
+        });
+      });
     }
     if (!quiet) flash(enabled ? 'liquid glass: ON' : 'liquid glass: OFF (Liquify 標準)');
     if (enabled) { rescan(); render(true); }
@@ -996,7 +1262,7 @@
       if (!paintsAtItsCorner(cs2)) continue;
       var key2 = (r2.width | 0) + 'x' + (r2.height | 0) + 'r' + (rad | 0);
       swept.push(el);
-      if (el.__lgCorner === key2) continue;
+      if (el.__lgCorner === key2 && el.style.clipPath) continue;
       el.__lgCorner = key2;
       el.style.clipPath = squirclePath(r2.width, r2.height, rad, DEFAULTS.superness);
     }
@@ -1164,6 +1430,22 @@
     return true;
   }
 
+  /* Opacity multiplies down the tree, and the canvas is outside that tree. A
+   * shelf's carousel arrow is a fully opaque button inside a group that is
+   * faded to nothing until the pointer arrives, so reading the element's own
+   * opacity said "visible" while the screen showed nothing but our frame. */
+  function effectiveOpacity(el) {
+    var o = 1;
+    for (var a = el, i = 0; a && i < 12; a = a.parentElement, i++) {
+      var cs = getComputedStyle(a);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return 0;
+      o *= +cs.opacity;
+      if (o <= 0.02) return 0;
+      if (a.classList && a.classList.contains('Root__top-container')) break;
+    }
+    return o;
+  }
+
   /* Full screen fills the window with Spotify's own layout. Drawing the usual
    * set on top of it covered everything; drawing nothing left it plain. What it
    * wants is one sheet of glass: the cinema panel itself, and nothing else. */
@@ -1203,6 +1485,9 @@
     }
     if (!force && !dirty) return;
     dirty = false;
+    /* Floaters come and go with a click, so this rides the same dirty flag the
+     * draw pass does rather than waiting for the next rescan. */
+    styleFloaters();
     var dpr = window.devicePixelRatio || 1;
     var W = Math.round(window.innerWidth * dpr);
     var H = Math.round(window.innerHeight * dpr);
@@ -1220,7 +1505,7 @@
        * the top bar and the playbar out on their own timers; drawing from a
        * stale flag leaves the glass frame hanging there after its element has
        * gone, and the two bars drop at different moments. */
-      var op = +getComputedStyle(m.el).opacity;
+      var op = effectiveOpacity(m.el);
       if (!(op > 0.02)) { drop(m); continue; }
       var r = m.el.getBoundingClientRect();
       if (Math.max(r.width, r.height) <= 64 && contentIsHidden(m.el)) { drop(m); continue; }
@@ -1273,7 +1558,11 @@
        * rim and cannot double it. */
       var clipKey = (rr.width | 0) + 'x' + (rr.height | 0) + 'r' + radius.toFixed(1) +
                     'n' + DEFAULTS.superness;
-      if (mm.el.__lgRadius !== clipKey) {
+      /* The inline style is checked, not just the cached key. Spotify rebuilds
+       * a tile's style attribute on its own - a hover, a re-render - and takes
+       * the clip with it, which is why some covers were cut to the corner and
+       * some were left square until something touched them again. */
+      if (mm.el.__lgRadius !== clipKey || !mm.el.style.clipPath) {
         mm.el.__lgRadius = clipKey;
         mm.el.style.setProperty('border-radius', '0', 'important');
         mm.el.style.setProperty('clip-path',
