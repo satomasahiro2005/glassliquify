@@ -4,13 +4,13 @@ A fork of [Liquify](https://github.com/NMWplays/Liquify) that replaces the
 theme's glass with a WebGL port of [Backdrop](https://github.com/Kyant0/AndroidLiquidGlass)'s
 refraction, dispersion and highlight shaders.
 
-**Liquify as it ships**
-
-![before](docs/images/before.jpg)
-
 **This fork**
 
 ![after](docs/images/after.jpg)
+
+**Liquify as it ships**
+
+![before](docs/images/before.jpg)
 
 `Ctrl+Shift+G` switches between the two at runtime.
 

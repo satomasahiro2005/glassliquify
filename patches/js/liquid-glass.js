@@ -53,6 +53,7 @@
     '.main-trackCreditsModal-container', '.main-embedWidgetGenerator-container',
     '#marketplace-readme', '.xamNkt5LX9o8aL1q', '.zddkQq3wlxEOg6aa',
     '.NJh1B8rnlSUlK7sY', '.main-topBar-buddyFeed', '.main-userWidget-box',
+    '#liquify-next-song-card',
   ];
 
   /* Full screen is one big sheet. Frosting it to the same degree as a context
@@ -65,12 +66,18 @@
     hlAlpha: 0.5,
   };
 
-  // frosted rather than clear: overlays want separation from what is under them
+  /* Overlays carry text over whatever the wallpaper happens to be, so they get
+   * the legibility treatment rather than the clear one: crush the backdrop's
+   * contrast, pull its brightness down and lay a dark sheet over it. Adding
+   * white instead raises the floor and white text disappears into it - measured
+   * that way round first. */
   var OVERLAY_STYLE = {
     blurMix: 1,
     dispersion: 0,
-    surface: [1, 1, 1, 0.14],
-    hlAlpha: 0.55,
+    brightness: -0.12,
+    contrast: 0.65,
+    surface: [0.06, 0.06, 0.08, 0.55],
+    hlAlpha: 0.5,
   };
 
   /* Below this, a control's visible shape is its own background rather than
@@ -1027,7 +1034,11 @@
       if (Math.min(r.width, r.height) < MIN_GLASS_SIZE ||
           r.bottom <= 0 || r.top >= window.innerHeight ||
           r.right <= 0 || r.left >= window.innerWidth) { drop(m); continue; }
-      var c = (m.clip && m.clip.isConnected) ? m.clip.getBoundingClientRect() : null;
+      /* Recomputed every frame. The cached one goes stale as soon as anything
+       * reflows, and a stale clip is the same as no clip: the sheet is drawn
+       * past the top of the scroller and down over the playbar. */
+      var sc = scrollClipOf(m.el);
+      var c = sc ? sc.getBoundingClientRect() : null;
       if (c && (r.right <= c.left || r.left >= c.right ||
                 r.bottom <= c.top || r.top >= c.bottom)) { drop(m); continue; }
       list.push({ m: m, r: r, c: c, op: op });
