@@ -49,8 +49,7 @@
 
   var OVERLAYS = [
     '.liquifySettingsPanel', '.liquifySelectMenu', 'dialog',
-    '.main-contextMenu-menu', '.main-contextMenu-tippy', '.Dropdown-menu',
-    '.Root__cinema-view', '.main-playlistEditDetailsModal-container',
+    '.main-contextMenu-menu', '.main-contextMenu-tippy', '.Dropdown-menu', '.main-playlistEditDetailsModal-container',
     '.main-trackCreditsModal-container', '.main-embedWidgetGenerator-container',
     '#marketplace-readme', '.xamNkt5LX9o8aL1q', '.zddkQq3wlxEOg6aa',
     '.NJh1B8rnlSUlK7sY', '.main-topBar-buddyFeed', '.main-userWidget-box',
@@ -849,6 +848,7 @@
 
   var sig = '';
   var dirty = true;
+  var wasCinema = false;
 
   /* Idle frames must cost nothing. getBoundingClientRect on every matched
    * element forces layout, so it only runs when something could have moved:
@@ -865,8 +865,40 @@
     }
   }
 
+  /* Full screen is Spotify's own presentation: it fills the window with the
+   * cover and its own background. Drawing over that put the canvas on top of
+   * the whole thing and left the nav row and a stray panel visible. Stand down
+   * while it is up. */
+  function cinemaOpen() {
+    var c = document.querySelector('.Root__cinema-view');
+    return !!(c && c.getBoundingClientRect().width > 0);
+  }
+
   function render(force) {
     if (!renderer) return;
+    if (cinemaOpen()) {
+      if (!wasCinema) {
+        wasCinema = true;
+        setStyle(false);
+        if (canvas) canvas.style.display = 'none';
+        document.querySelectorAll('[data-liquify-lg],[data-liquify-lg-plain]').forEach(function (el) {
+          el.removeAttribute('data-liquify-lg');
+          el.removeAttribute('data-liquify-lg-plain');
+          el.style.removeProperty('box-shadow');
+          el.style.removeProperty('border-color');
+          el.style.clipPath = '';
+          el.__lgClip = null;
+        });
+      }
+      return;
+    }
+    if (wasCinema) {
+      wasCinema = false;
+      setStyle(enabled);
+      if (canvas) canvas.style.display = enabled ? '' : 'none';
+      rescan();
+      force = true;
+    }
     if (!force && !dirty) return;
     dirty = false;
     var dpr = window.devicePixelRatio || 1;
