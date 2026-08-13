@@ -9,7 +9,7 @@
 CSS は後勝ちなので、追記だけで上書きできる。upstream を取り込んでもコンフリクトしない。
 
 ```
-patches/010-lyrics-width.css   パッチ本体（ファイル名の数字で連結順）
+patches/*.css                  CSS のパッチ（ファイル名の数字で連結順）
 build.ps1                      dist/ を作る（user.css + patches、色とJSはコピー）
 deploy.ps1                     build → Themes\Liquify-fork へ設置 → spicetify apply
 dist/                          生成物。git 管理外
@@ -60,7 +60,9 @@ grep -o "\.lyrics-lyrics-[a-zA-Z]*[^{]*{[^}]*}" \
 
 | ファイル | 内容 |
 | --- | --- |
-| `010-lyrics-width.css` | 歌詞の横幅。既定 `min(100% - 128px, 1024px)` → 幅いっぱい |
+| `patches/js/liquid-glass.js` | WebGL のガラス本体 |
+| `patches/js/liquid-glass-settings.js` | 設定パネル |
+| `patches/js/targets.generated.js` | 対象セレクタ(theme.js から生成) |
 
 ## 環境まわり
 

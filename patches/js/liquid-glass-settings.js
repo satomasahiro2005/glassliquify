@@ -23,18 +23,18 @@
       label: 'クリア',
       values: { adaptive: false, brightness: 0, contrast: 1, saturation: 1.5,
                 blurMix: 0, surface: [1, 1, 1, 0.03], dispersion: 1,
-                superness: 4, radiusScale: 1.15, height: 24, amount: 48, hlAlpha: 0.5 },
+                superness: 4, radiusScale: 1.06, height: 24, amount: 48, hlAlpha: 0.75 },
     },
     adaptive: {
       label: '適応',
       values: { adaptive: true, saturation: 1.5, surface: [1, 1, 1, 0.05],
-                dispersion: 1, superness: 4, radiusScale: 1.15, height: 24, amount: 48, hlAlpha: 0.5 },
+                dispersion: 1, superness: 4, radiusScale: 1.06, height: 24, amount: 48, hlAlpha: 0.75 },
     },
     frosted: {
       label: 'くもり',
       values: { adaptive: false, brightness: 0, contrast: 1, saturation: 1.5,
                 blurMix: 1, surface: [1, 1, 1, 0.12], dispersion: 0.4,
-                superness: 4, radiusScale: 1.15, height: 24, amount: 48, hlAlpha: 0.55 },
+                superness: 4, radiusScale: 1.06, height: 24, amount: 48, hlAlpha: 0.75 },
     },
   };
 

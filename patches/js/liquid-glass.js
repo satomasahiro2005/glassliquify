@@ -43,7 +43,7 @@
      * a dialog over a sharp wallpaper is hard. Marked here rather than left to
      * the theme, whose own blur is the one being replaced. */
     TARGETS = TARGETS.filter(function (t) {
-      return OVERLAYS.indexOf(t.selector) < 0;
+      return OVERLAYS.indexOf(t.selector) < 0 && NO_SHEET.indexOf(t.selector) < 0;
     });
   }
 
@@ -102,13 +102,32 @@
    * entirely when their fill was taken away. Leave them to the theme. */
   var MIN_GLASS_SIZE = 40;
 
+  /* Wrappers that exist to group other panels. Giving each of them a sheet of
+   * its own stacks frame inside frame inside frame, and the overlaps read as
+   * noise rather than as glass. The panels inside them keep their own. */
+  /* A strip along the top of a pane that the theme already frames. A sheet of
+   * its own lands ~20px inside that frame and the two outlines read as one
+   * doubled corner. Whose frame wins does not matter much; having both does. */
+  var NO_SHEET = ['.main-nowPlayingView-headerWrapper'];
+
+  var CONTAINERS = [
+    '.main-home-content section',
+    '.main-shelf-shelf',
+    '.view-homeShortcutsGrid-shortcuts',
+    '.main-home-filterChipsSection',
+    '.main-nowPlayingView-section',
+    /* A strip along the top of a pane that already has its own frame. Giving
+     * it a second one draws two rounded outlines a few px apart. */
+    '.main-nowPlayingView-headerWrapper',
+  ];
+
   var MAX_ELEMENTS = 400;   // backstop; drawing is cheap, layout reads are not
 
   var DEFAULTS = {
     superness: 4,        /* superellipse exponent: 2 is a circular arc, larger
                           * is squarer. Not a roundness dial - it sets how much
                           * of the corner is straight. */
-    radiusScale: 1.15,   // a touch rounder than the theme, not a redesign
+    radiusScale: 1.06,   // a hair over the theme's radii, no more
     height: 24,
     amount: 48,
     depthEffect: 1,
@@ -122,9 +141,9 @@
     surface: [1, 1, 1, 0.05],
     hlAngle: 45,
     hlFalloff: 2,
-    hlAlpha: 0.5,
+    hlAlpha: 0.75,       // the rim is the only frame, so it has to carry
     hlWidth: 1.5,
-    hlFloor: 0.35,
+    hlFloor: 0.55,
     roundChildren: true,
   };
 
@@ -766,6 +785,13 @@
        * Leaving those draws a second arc beside the superellipse: the curves
        * lie on top of each other along the straight edges and separate at the
        * corner, which is exactly the doubled corner. */
+      /* One frame per surface, and it is the shader's rim. Drawing a CSS border
+       * as well put ours next to the theme's on the same corner. */
+      /* The panes are containers, not panels. The theme frames them, and a
+       * sheet drawn just inside one puts a second outline 20px from the first,
+       * which is what reads as a doubled corner in the right pane. */
+      '.Root__right-sidebar,.Root__nav-bar{box-shadow:none!important;' +
+      'border-color:transparent!important;}' +
       '[data-liquify-lg]{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
       'border-color:transparent!important;box-shadow:none!important;' +
       'outline:none!important;background-image:none!important;' +
@@ -819,8 +845,7 @@
       document.querySelectorAll('[data-liquify-lg],[data-liquify-lg-plain]').forEach(function (el) {
         el.removeAttribute('data-liquify-lg');
         el.removeAttribute('data-liquify-lg-plain');
-        el.style.clipPath = '';
-        el.__lgClip = null;
+
       });
     }
     if (!quiet) flash(enabled ? 'liquid glass: ON' : 'liquid glass: OFF (Liquify 標準)');
@@ -863,11 +888,29 @@
       var cs = getComputedStyle(el);
       var bf = cs.backdropFilter || cs.webkitBackdropFilter || '';
       if (bf === 'none' || bf.indexOf('blur') < 0) continue;
-      if (!el.hasAttribute('data-liquify-lg-plain')) {
-        el.setAttribute('data-liquify-lg-plain', '');
-        el.style.setProperty('backdrop-filter', 'none', 'important');
-        el.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
-      }
+      /* Left alone on purpose. Taking the theme's glass off something this
+       * pass does not replace leaves the element with no glass at all - the
+       * shortcut tiles lost their outlines entirely that way. Only the draw
+       * pass strips, and only what it draws. */
+    }
+
+    /* Every rounded corner in the app, not just the glass. A superellipse next
+     * to a circular arc at the same radius reads as two different shapes, and
+     * the app is full of both. Circles are left alone - an avatar is meant to
+     * be a circle, not a squircle. */
+    for (i = 0; i < all.length && i < 4000; i++) {
+      el = all[i];
+      var r2 = el.getBoundingClientRect();
+      if (r2.width < 16 || r2.height < 16) continue;
+      var cs2 = getComputedStyle(el);
+      var rad = parseFloat(cs2.borderTopLeftRadius);
+      if (isNaN(rad) || rad < 6) continue;
+      if (cs2.borderTopLeftRadius !== cs2.borderBottomRightRadius) continue;
+      if (rad >= Math.min(r2.width, r2.height) / 2 - 0.5) continue;   // a circle
+      var key2 = (r2.width | 0) + 'x' + (r2.height | 0) + 'r' + (rad | 0);
+      if (el.__lgCorner === key2) continue;
+      el.__lgCorner = key2;
+      el.style.clipPath = squirclePath(r2.width, r2.height, rad, DEFAULTS.superness);
     }
   }
 
@@ -975,13 +1018,13 @@
      * it is big enough to have been ours - otherwise half the sections are
      * clear and half are frosted. Small controls keep their glass: it is the
      * only thing making them visible. */
-    var r = m.el.getBoundingClientRect ? m.el.getBoundingClientRect() : null;
-    if (r && Math.min(r.width, r.height) >= MIN_GLASS_SIZE) {
-      if (!m.el.hasAttribute('data-liquify-lg-plain')) {
-        m.el.setAttribute('data-liquify-lg-plain', '');
-      }
-    } else if (m.el.hasAttribute('data-liquify-lg-plain')) {
+    /* Whatever we do not draw keeps the theme's glass. Marking it plain took
+     * the theme's backdrop-filter away without putting anything in its place,
+     * and the shortcut tiles ended up with no outline at all. */
+    if (m.el.hasAttribute && m.el.hasAttribute('data-liquify-lg-plain')) {
       m.el.removeAttribute('data-liquify-lg-plain');
+      m.el.style.removeProperty('backdrop-filter');
+      m.el.style.removeProperty('-webkit-backdrop-filter');
     }
     if (m.el.hasAttribute && m.el.hasAttribute('data-liquify-lg')) {
       m.el.removeAttribute('data-liquify-lg');
@@ -991,8 +1034,9 @@
       m.el.style.removeProperty('-webkit-backdrop-filter');
       m.el.style.removeProperty('box-shadow');
       m.el.style.removeProperty('border-color');
-      m.el.style.clipPath = '';
-      m.el.__lgClip = null;
+      /* Corners are owned by the sweep, not by the draw pass. Clearing the
+       * clip here fought it: the sheet lost its superellipse every frame it
+       * was not drawn and got it back on the next sweep. */
     }
   }
 
@@ -1020,8 +1064,6 @@
           el.removeAttribute('data-liquify-lg-plain');
           el.style.removeProperty('box-shadow');
           el.style.removeProperty('border-color');
-          el.style.clipPath = '';
-          el.__lgClip = null;
         });
         force = true;
       }
@@ -1086,18 +1128,28 @@
         mm.el.style.setProperty('backdrop-filter', 'none', 'important');
         mm.el.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
         mm.el.style.setProperty('box-shadow', 'none', 'important');
-        mm.el.style.setProperty('border-color', 'transparent', 'important');
+
       }
-      if (mm.el.style.clipPath) { mm.el.style.clipPath = ''; mm.el.__lgClip = null; }
       drawn++;
 
       var minDim = Math.min(rr.width, rr.height);
       var radius = Math.min(mm.radius * DEFAULTS.radiusScale, minDim / 2);
-      /* The element has to agree, or its own outline shows at the old radius
-       * next to the sheet's at the new one. */
-      if (mm.el.__lgRadius !== radius) {
-        mm.el.__lgRadius = radius;
-        mm.el.style.setProperty('border-radius', radius + 'px', 'important');
+      /* The corner reads as Apple's because of its curvature, not because it is
+       * bigger. Keep the theme's radius and give the element the same
+       * superellipse the shader uses - safe now that the theme's own border and
+       * shadow are stripped from these surfaces, so nothing draws the old arc
+       * beside it. */
+      /* Only touch the element's own radius when the knob actually changes it.
+       * Forcing a border-radius on every surface rounded things that were meant
+       * to be square and made the whole app look inflated. */
+      if (DEFAULTS.radiusScale !== 1) {
+        if (mm.el.__lgRadius !== radius) {
+          mm.el.__lgRadius = radius;
+          mm.el.style.setProperty('border-radius', radius + 'px', 'important');
+        }
+      } else if (mm.el.__lgRadius) {
+        mm.el.__lgRadius = null;
+        mm.el.style.removeProperty('border-radius');
       }
       /* No clip-path. The element is transparent and the frame is drawn by the
        * shader, so clipping buys nothing - and the polygon approximates the
