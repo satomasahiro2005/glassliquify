@@ -105,7 +105,10 @@
   var MAX_ELEMENTS = 400;   // backstop; drawing is cheap, layout reads are not
 
   var DEFAULTS = {
-    superness: 4,        // superellipse, not a circular arc
+    superness: 4,        /* superellipse exponent: 2 is a circular arc, larger
+                          * is squarer. Not a roundness dial - it sets how much
+                          * of the corner is straight. */
+    radiusScale: 1.15,   // a touch rounder than the theme, not a redesign
     height: 24,
     amount: 48,
     depthEffect: 1,
@@ -835,8 +838,12 @@
   function scrollClipOf(el) {
     for (var q = el.parentElement; q; q = q.parentElement) {
       var cs = getComputedStyle(q);
+      /* Only boxes that hard-clip. A scroller's rect is not where its content
+       * visually ends - the browser already draws the element where it draws
+       * it, and cutting again at the scroller's edge slices the sheet across
+       * the middle of a panel while its text carries on below. */
       var o = cs.overflow + cs.overflowX + cs.overflowY;
-      if (o.indexOf('hidden') >= 0 || o.indexOf('auto') >= 0 || o.indexOf('scroll') >= 0) return q;
+      if (o.indexOf('hidden') >= 0 || o.indexOf('clip') >= 0) return q;
       if (q === document.documentElement) break;
     }
     return null;
@@ -978,6 +985,8 @@
     }
     if (m.el.hasAttribute && m.el.hasAttribute('data-liquify-lg')) {
       m.el.removeAttribute('data-liquify-lg');
+      m.el.style.removeProperty('border-radius');
+      m.el.__lgRadius = null;
       m.el.style.removeProperty('backdrop-filter');
       m.el.style.removeProperty('-webkit-backdrop-filter');
       m.el.style.removeProperty('box-shadow');
@@ -1083,7 +1092,13 @@
       drawn++;
 
       var minDim = Math.min(rr.width, rr.height);
-      var radius = Math.min(mm.radius, minDim / 2);
+      var radius = Math.min(mm.radius * DEFAULTS.radiusScale, minDim / 2);
+      /* The element has to agree, or its own outline shows at the old radius
+       * next to the sheet's at the new one. */
+      if (mm.el.__lgRadius !== radius) {
+        mm.el.__lgRadius = radius;
+        mm.el.style.setProperty('border-radius', radius + 'px', 'important');
+      }
       /* No clip-path. The element is transparent and the frame is drawn by the
        * shader, so clipping buys nothing - and the polygon approximates the
        * superellipse with 16 straight segments per corner, which does not lie

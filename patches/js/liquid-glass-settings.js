@@ -23,18 +23,18 @@
       label: 'クリア',
       values: { adaptive: false, brightness: 0, contrast: 1, saturation: 1.5,
                 blurMix: 0, surface: [1, 1, 1, 0.03], dispersion: 1,
-                superness: 4, height: 24, amount: 48, hlAlpha: 0.5 },
+                superness: 4, radiusScale: 1.15, height: 24, amount: 48, hlAlpha: 0.5 },
     },
     adaptive: {
       label: '適応',
       values: { adaptive: true, saturation: 1.5, surface: [1, 1, 1, 0.05],
-                dispersion: 1, superness: 4, height: 24, amount: 48, hlAlpha: 0.5 },
+                dispersion: 1, superness: 4, radiusScale: 1.15, height: 24, amount: 48, hlAlpha: 0.5 },
     },
     frosted: {
       label: 'くもり',
       values: { adaptive: false, brightness: 0, contrast: 1, saturation: 1.5,
                 blurMix: 1, surface: [1, 1, 1, 0.12], dispersion: 0.4,
-                superness: 4, height: 24, amount: 48, hlAlpha: 0.55 },
+                superness: 4, radiusScale: 1.15, height: 24, amount: 48, hlAlpha: 0.55 },
     },
   };
 
@@ -42,7 +42,8 @@
     { k: 'height', label: '屈折の幅', min: 2, max: 90, step: 1 },
     { k: 'amount', label: '屈折の量', min: 0, max: 160, step: 1 },
     { k: 'dispersion', label: '色収差', min: 0, max: 1, step: 0.02 },
-    { k: 'superness', label: '角の丸み', min: 2, max: 8, step: 0.1 },
+    { k: 'radiusScale', label: '角の大きさ', min: 0.5, max: 3, step: 0.05 },
+    { k: 'superness', label: '角の角ばり', min: 2, max: 8, step: 0.1 },
     { k: 'depthEffect', label: '深さ', min: 0, max: 1, step: 0.02 },
     { k: 'saturation', label: '彩度', min: 1, max: 2.5, step: 0.05 },
     { k: 'blurMix', label: 'ぼかし', min: 0, max: 1, step: 0.02 },
@@ -99,7 +100,7 @@
         preset: current,
         values: {
           height: d.height, amount: d.amount, dispersion: d.dispersion,
-          superness: d.superness, depthEffect: d.depthEffect,
+          superness: d.superness, radiusScale: d.radiusScale, depthEffect: d.depthEffect,
           saturation: d.saturation, blurMix: d.blurMix, adaptive: d.adaptive,
           hlAlpha: d.hlAlpha, hlAngle: d.hlAngle, surface: d.surface,
           brightness: d.brightness, contrast: d.contrast,
