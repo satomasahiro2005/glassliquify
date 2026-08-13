@@ -17,12 +17,14 @@
 
   var LOG = '[liquid-glass]';
 
-  /* Surfaces whose backdrop really is only the album-art layer. Anything that
-   * sits over a scrolling list is deliberately not here - the canvas would show
-   * the wallpaper where the list should be. */
-  var TARGETS = [
-    { selector: '.Root__now-playing-bar', radius: 20 },
-  ];
+  /* Every surface Liquify puts glass on, generated from its GLASS_TARGETS by
+   * tools/gen-targets.py. Some of these sit over scrolling content, where the
+   * canvas shows the wallpaper instead of what is really behind - that is
+   * expected for now and gets trimmed once we can see which ones break. */
+  var TARGETS = (window.__liquifyGlassTargets || [{ s: '.Root__now-playing-bar', r: 20 }])
+    .map(function (t) { return { selector: t.s, radius: t.r, ca: t.ca !== false }; });
+
+  var MAX_ELEMENTS = 400;   // backstop; drawing is cheap, layout reads are not
 
   var DEFAULTS = {
     superness: 4,
@@ -330,13 +332,32 @@
     if (document.getElementById('liquify-lg-style')) return;
     var st = document.createElement('style');
     st.id = 'liquify-lg-style';
-    // hand the surfaces over: no backdrop-filter of Liquify's, and lift the
-    // element above the canvas so its own content still draws on top
-    st.textContent = TARGETS.map(function (t) {
-      return t.selector + '{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
-             'background:transparent!important;position:relative;z-index:2;}';
-    }).join('') + '#liquify-lg-canvas{z-index:1;}';
+    var sels = TARGETS.map(function (t) { return t.selector; }).join(',');
+    // hand the surfaces over: drop Liquify's backdrop-filter and lift the
+    // elements above the canvas so their own content still draws on top
+    st.textContent =
+      ':is(' + sels + '){backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
+      'background-color:transparent!important;}' +
+      ':is(' + sels + ')::before{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;}' +
+      '#liquify-lg-canvas{z-index:1;}';
     document.head.appendChild(st);
+  }
+
+  /* Selector matching is the expensive part, so it runs on a timer; the rects
+   * are re-read every frame because scrolling moves them. */
+  var matched = [];
+
+  function rescan() {
+    var out = [];
+    for (var i = 0; i < TARGETS.length && out.length < MAX_ELEMENTS; i++) {
+      var t = TARGETS[i];
+      var els;
+      try { els = document.querySelectorAll(t.selector); } catch (e) { continue; }
+      for (var j = 0; j < els.length && out.length < MAX_ELEMENTS; j++) {
+        out.push({ el: els[j], t: t });
+      }
+    }
+    matched = out;
   }
 
   function render() {
@@ -347,20 +368,38 @@
     if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
 
     renderer.begin();
-    TARGETS.forEach(function (t) {
-      var el = document.querySelector(t.selector);
-      if (!el) return;
-      var r = el.getBoundingClientRect();
-      if (!r.width || !r.height) return;
+    for (var i = 0; i < matched.length; i++) {
+      var m = matched[i];
+      if (!m.el.isConnected) continue;
+      var r = m.el.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) continue;
+      if (r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth) continue;
+
+      var radius = m.t.radius;
+      var cs = getComputedStyle(m.el);
+      if (cs.visibility === 'hidden' || cs.display === 'none' || +cs.opacity === 0) continue;
+      var cssR = parseFloat(cs.borderTopLeftRadius);
+      if (!isNaN(cssR) && cssR > 0) radius = cssR;
+
+      // a big lens on a small chip looks wrong; scale it to what fits
+      var minDim = Math.min(r.width, r.height);
+      var scale = Math.min(1, minDim / 96);
+
       renderer.draw({
         x: r.left * dpr, y: r.top * dpr, w: r.width * dpr, h: r.height * dpr,
-        r: t.radius * dpr,
+        r: Math.min(radius, minDim / 2) * dpr,
       }, Object.assign({}, DEFAULTS, {
-        height: DEFAULTS.height * dpr,
-        amount: DEFAULTS.amount * dpr,
+        height: DEFAULTS.height * scale * dpr,
+        amount: DEFAULTS.amount * scale * dpr,
         hlWidth: DEFAULTS.hlWidth * dpr,
+        dispersion: m.t.ca ? DEFAULTS.dispersion : 0,
       }));
-    });
+    }
+  }
+
+  function loop() {
+    render();
+    requestAnimationFrame(loop);
   }
 
   function refreshBackdrop() {
@@ -395,15 +434,16 @@
     }
     window.addEventListener('resize', function () { refreshBackdrop(); });
 
-    // the playbar changes height when the queue/lyrics panel opens
-    var ro = new ResizeObserver(function () { render(); });
-    TARGETS.forEach(function (t) {
-      var el = document.querySelector(t.selector);
-      if (el) ro.observe(el);
-    });
+    rescan();
+    setInterval(rescan, 400);
+    requestAnimationFrame(loop);
 
-    window.liquifyLG = { render: render, refresh: refreshBackdrop, defaults: DEFAULTS };
-    console.log(LOG, 'ready');
+    window.liquifyLG = {
+      render: render, refresh: refreshBackdrop, rescan: rescan,
+      defaults: DEFAULTS, targets: TARGETS,
+      count: function () { return matched.length; },
+    };
+    console.log(LOG, 'ready:', TARGETS.length, 'selectors');
   }
 
   function waitForSpicetify() {

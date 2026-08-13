@@ -1,0 +1,14 @@
+/* 020-bg-blur
+ * 背景のぼかしをゼロにする。
+ *
+ * .liquify-bg-layer は既定で blur(7px) brightness(45%)。レンズは背景の模様を
+ * 曲げて見せるものなので、曲げる対象が先にぼけていると屈折も分散も残らない。
+ * ガラスを効かせるなら背景は素のままでないといけない。
+ *
+ * theme.js は localStorage の値を documentElement のインラインスタイルに書くので、
+ * !important で上書きしないと勝てない。
+ */
+
+:root {
+  --liquify-bg-blur: 0px !important;
+}
