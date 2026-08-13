@@ -1,0 +1,251 @@
+/* Settings panel for the liquid glass extension.
+ *
+ * Separate file so the renderer stays about rendering. It only talks to
+ * window.liquifyLG, which liquid-glass.js publishes, and persists whatever the
+ * user lands on so it survives a restart.
+ */
+(function () {
+  'use strict';
+
+  var KEY = 'liquify-lg-settings';
+
+  /* Named starting points rather than a wall of sliders.
+   *
+   * clear    - nothing between you and the wallpaper but the lens. no blur, no
+   *            adaptation, the faintest tint. what the notification centre looks
+   *            like on the way down.
+   * adaptive - the material reads the luminance behind it and moves, which is
+   *            what keeps text readable over a bright cover.
+   * frosted  - the blurred end, for when the wallpaper is too busy to read over.
+   */
+  var PRESETS = {
+    clear: {
+      label: 'クリア',
+      values: { adaptive: false, brightness: 0, contrast: 1, saturation: 1.5,
+                blurMix: 0, surface: [1, 1, 1, 0.03], dispersion: 1,
+                height: 24, amount: 48, hlAlpha: 0.5 },
+    },
+    adaptive: {
+      label: '適応',
+      values: { adaptive: true, saturation: 1.5, surface: [1, 1, 1, 0.05],
+                dispersion: 1, height: 24, amount: 48, hlAlpha: 0.5 },
+    },
+    frosted: {
+      label: 'くもり',
+      values: { adaptive: false, brightness: 0, contrast: 1, saturation: 1.5,
+                blurMix: 1, surface: [1, 1, 1, 0.12], dispersion: 0.4,
+                height: 24, amount: 48, hlAlpha: 0.55 },
+    },
+  };
+
+  var SLIDERS = [
+    { k: 'height', label: '屈折の幅', min: 2, max: 90, step: 1 },
+    { k: 'amount', label: '屈折の量', min: 0, max: 160, step: 1 },
+    { k: 'dispersion', label: '色収差', min: 0, max: 1, step: 0.02 },
+    { k: 'superness', label: '角の丸み', min: 2, max: 8, step: 0.1 },
+    { k: 'depthEffect', label: '深さ', min: 0, max: 1, step: 0.02 },
+    { k: 'saturation', label: '彩度', min: 1, max: 2.5, step: 0.05 },
+    { k: 'blurMix', label: 'ぼかし', min: 0, max: 1, step: 0.02 },
+    { k: 'hlAlpha', label: '縁の光', min: 0, max: 1, step: 0.02 },
+    { k: 'hlAngle', label: '光の角度', min: 0, max: 360, step: 5 },
+    { k: 'tint', label: '白の濃さ', min: 0, max: 0.4, step: 0.01 },
+  ];
+
+  var CSS =
+    '#liquify-lg-btn{position:fixed;right:18px;bottom:110px;z-index:99998;width:42px;height:42px;' +
+    'border-radius:50%;border:1px solid rgba(255,255,255,.22);background:rgba(20,20,24,.72);' +
+    'backdrop-filter:blur(14px);color:#fff;font-size:18px;cursor:pointer;display:flex;' +
+    'align-items:center;justify-content:center;transition:transform .15s,background .15s;}' +
+    '#liquify-lg-btn:hover{transform:scale(1.08);background:rgba(30,30,36,.85);}' +
+    '#liquify-lg-panel{position:fixed;right:18px;bottom:162px;z-index:99999;width:286px;' +
+    'padding:14px 16px;border-radius:16px;border:1px solid rgba(255,255,255,.14);' +
+    'background:rgba(18,18,22,.94);backdrop-filter:blur(20px);color:#fff;' +
+    'font:12px/1.5 ui-sans-serif,system-ui,"Segoe UI",sans-serif;' +
+    'max-height:70vh;overflow:auto;box-shadow:0 18px 50px rgba(0,0,0,.5);}' +
+    '#liquify-lg-panel[hidden]{display:none;}' +
+    '#liquify-lg-panel h3{margin:0 0 10px;font-size:11px;letter-spacing:.1em;opacity:.55;' +
+    'text-transform:uppercase;font-weight:600;}' +
+    '#liquify-lg-panel .presets{display:flex;gap:6px;margin-bottom:12px;}' +
+    '#liquify-lg-panel .presets button{flex:1;padding:6px 0;border-radius:9px;cursor:pointer;' +
+    'border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#fff;font:inherit;}' +
+    '#liquify-lg-panel .presets button.on{background:rgba(255,255,255,.9);color:#111;border-color:transparent;}' +
+    '#liquify-lg-panel label{display:flex;align-items:center;gap:8px;margin:6px 0;}' +
+    '#liquify-lg-panel label>span{flex:0 0 72px;opacity:.75;}' +
+    '#liquify-lg-panel input[type=range]{flex:1;min-width:0;accent-color:#fff;}' +
+    '#liquify-lg-panel output{flex:0 0 40px;text-align:right;font-variant-numeric:tabular-nums;opacity:.85;}' +
+    '#liquify-lg-panel .row{display:flex;align-items:center;justify-content:space-between;' +
+    'padding:8px 0;border-top:1px solid rgba(255,255,255,.1);margin-top:10px;}' +
+    '#liquify-lg-panel .row button{padding:5px 12px;border-radius:9px;cursor:pointer;' +
+    'border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#fff;font:inherit;}' +
+    '#liquify-lg-panel .hint{opacity:.45;font-size:11px;margin-top:8px;}';
+
+  function el(tag, attrs, kids) {
+    var n = document.createElement(tag);
+    for (var k in attrs || {}) {
+      if (k === 'text') n.textContent = attrs[k];
+      else if (k === 'html') n.innerHTML = attrs[k];
+      else n.setAttribute(k, attrs[k]);
+    }
+    (kids || []).forEach(function (c) { n.appendChild(c); });
+    return n;
+  }
+
+  function save() {
+    try {
+      var d = window.liquifyLG.defaults;
+      localStorage.setItem(KEY, JSON.stringify({
+        preset: current,
+        values: {
+          height: d.height, amount: d.amount, dispersion: d.dispersion,
+          superness: d.superness, depthEffect: d.depthEffect,
+          saturation: d.saturation, blurMix: d.blurMix, adaptive: d.adaptive,
+          hlAlpha: d.hlAlpha, hlAngle: d.hlAngle, surface: d.surface,
+          brightness: d.brightness, contrast: d.contrast,
+        },
+      }));
+    } catch (e) { /* private mode, quota - not worth failing over */ }
+  }
+
+  function restore() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (!raw) return null;
+      var o = JSON.parse(raw);
+      if (o && o.values) window.liquifyLG.set(o.values);
+      return o.preset || null;
+    } catch (e) { return null; }
+  }
+
+  var current = null;
+  var inputs = {};
+  var RETINA_KEY = 'liquify-lg-retina';
+
+  function retinaOn() {
+    return localStorage.getItem(RETINA_KEY) === 'on';
+  }
+
+  function setRetina(on) {
+    try { localStorage.setItem(RETINA_KEY, on ? 'on' : 'off'); } catch (e) {}
+    document.documentElement.style.zoom = on ? '2' : '';
+    if (window.liquifyLG) {
+      window.liquifyLG.rescan();
+      window.liquifyLG.render();
+    }
+  }
+
+  function syncInputs() {
+    var d = window.liquifyLG.defaults;
+    SLIDERS.forEach(function (s) {
+      var v = s.k === 'tint' ? d.surface[3] : d[s.k];
+      if (v == null) return;
+      inputs[s.k].input.value = v;
+      inputs[s.k].out.value = (+v).toFixed(s.step < 1 ? 2 : 0);
+    });
+    Array.prototype.forEach.call(
+      document.querySelectorAll('#liquify-lg-panel .presets button'),
+      function (b) { b.classList.toggle('on', b.dataset.k === current); });
+  }
+
+  function applyPreset(k) {
+    current = k;
+    window.liquifyLG.set(PRESETS[k].values);
+    syncInputs();
+    save();
+  }
+
+  function build() {
+    document.head.appendChild(el('style', { text: CSS }));
+
+    var btn = el('button', { id: 'liquify-lg-btn', title: 'Liquid Glass の設定', text: '◍' });
+    document.body.appendChild(btn);
+
+    var presets = el('div', { class: 'presets' });
+    Object.keys(PRESETS).forEach(function (k) {
+      var b = el('button', { text: PRESETS[k].label });
+      b.dataset.k = k;
+      b.addEventListener('click', function () { applyPreset(k); });
+      presets.appendChild(b);
+    });
+
+    var panel = el('div', { id: 'liquify-lg-panel', hidden: 'hidden' }, [
+      el('h3', { text: 'Liquid Glass' }),
+      presets,
+    ]);
+
+    SLIDERS.forEach(function (s) {
+      var input = el('input', { type: 'range', min: s.min, max: s.max, step: s.step });
+      var out = el('output');
+      input.addEventListener('input', function () {
+        var v = +input.value;
+        out.value = v.toFixed(s.step < 1 ? 2 : 0);
+        if (s.k === 'tint') {
+          var su = window.liquifyLG.defaults.surface.slice();
+          su[3] = v;
+          window.liquifyLG.set({ surface: su });
+        } else {
+          var patch = {};
+          patch[s.k] = v;
+          // touching brightness-related knobs by hand means leaving adaptive mode
+          if (s.k === 'blurMix' || s.k === 'saturation') patch.adaptive = false;
+          window.liquifyLG.set(patch);
+        }
+        current = null;
+        syncInputs();
+        save();
+      });
+      inputs[s.k] = { input: input, out: out };
+      panel.appendChild(el('label', {}, [el('span', { text: s.label }), input, out]));
+    });
+
+    var toggle = el('button', { text: window.liquifyLG.enabled ? 'ON' : 'OFF' });
+    toggle.addEventListener('click', function () {
+      toggle.textContent = window.liquifyLG.toggle() ? 'ON' : 'OFF';
+    });
+    panel.appendChild(el('div', { class: 'row' }, [
+      el('span', { text: 'ガラス (Ctrl+Shift+G)' }), toggle,
+    ]));
+
+    /* Treat the display as Retina.
+     *
+     * The honest way is --force-device-scale-factor=2 at launch, but a panel
+     * cannot change a launch flag. CSS zoom on the root gets the same result
+     * here: getBoundingClientRect returns coordinates in the zoomed space and
+     * innerWidth stays put, so the canvas and the surfaces still share one
+     * coordinate system and none of the drawing maths changes. Checked in the
+     * app rather than assumed. */
+    var retina = el('button', { text: retinaOn() ? '2x' : '1x' });
+    retina.addEventListener('click', function () {
+      var on = !retinaOn();
+      setRetina(on);
+      retina.textContent = on ? '2x' : '1x';
+    });
+    panel.appendChild(el('div', { class: 'row' }, [
+      el('span', { text: 'Retina 表示' }), retina,
+    ]));
+
+    var reset = el('button', { text: '既定に戻す' });
+    reset.addEventListener('click', function () { applyPreset('adaptive'); });
+    panel.appendChild(el('div', { class: 'row' }, [
+      el('span', { text: 'リセット' }), reset,
+    ]));
+
+    panel.appendChild(el('div', { class: 'hint', text: '設定は次回起動時にも残ります。' }));
+    document.body.appendChild(panel);
+
+    btn.addEventListener('click', function () {
+      panel.hidden = !panel.hidden;
+      if (!panel.hidden) syncInputs();
+    });
+
+    if (retinaOn()) setRetina(true);
+    current = restore() || 'adaptive';
+    if (!localStorage.getItem(KEY)) applyPreset('adaptive');
+    syncInputs();
+  }
+
+  function wait() {
+    if (window.liquifyLG && document.body) build();
+    else setTimeout(wait, 300);
+  }
+  wait();
+})();

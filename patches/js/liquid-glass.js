@@ -43,6 +43,8 @@
     amount: 48,
     depthEffect: 1,
     dispersion: 1,        // Backdrop passes chromaticAberration = 1.0
+    adaptive: true,       // read the backdrop's luminance per surface
+    blurMix: 0,
     dispersionCorner: 1,   // 1 = corners only, as Backdrop and iOS do it
     brightness: 0,
     contrast: 1,
@@ -99,6 +101,8 @@
     'in vec2 vPix;',
     'out vec4 outColor;',
     'uniform sampler2D uBackdrop;',
+    'uniform sampler2D uBackdropBlur;',
+    'uniform float uBlurMix;',
     'uniform vec2 uCanvas;',
     'uniform vec4 uRect;',
     'uniform vec4 uRadii;',
@@ -142,7 +146,10 @@
     '  }',
     '}',
     'float circleMap(float x) { return 1.0 - sqrt(1.0 - x * x); }',
-    'vec4 sampleBackdrop(vec2 pix) { return texture(uBackdrop, pix / uCanvas); }',
+    'vec4 sampleBackdrop(vec2 pix) {',
+    '  vec2 uv = pix / uCanvas;',
+    '  return mix(texture(uBackdrop, uv), texture(uBackdropBlur, uv), uBlurMix);',
+    '}',
     'vec3 colorControls(vec3 c) {',
     '  float invSat = 1.0 - uSaturation;',
     '  float r = 0.213 * invSat, g = 0.715 * invSat, b = 0.072 * invSat;',
@@ -255,7 +262,9 @@
     gl.bindVertexArray(null);
 
     this.wall = this.makeTex();     // the wallpaper
+    this.wallBlur = this.makeTex(); // and a blurred copy, for bright backdrops
     this.sample = this.makeTex();   // what the next quad reads
+    this.sampleBlur = this.makeTex();
     this.rt = this.makeTex();       // what we draw into
     this.fbo = gl.createFramebuffer();
     this.size = [0, 0];
@@ -263,7 +272,8 @@
     this.u = {};
     ['uCanvas','uRect','uRadii','uSuperness','uRefractionHeight','uRefractionAmount',
      'uDepthEffect','uDispersion','uDispersionCorner','uBrightness','uContrast','uSaturation',
-     'uSurface','uHighlight','uHlAngle','uHlFalloff','uHlWidth','uBackdrop'
+     'uSurface','uHighlight','uHlAngle','uHlFalloff','uHlWidth','uBackdrop',
+     'uBackdropBlur','uBlurMix'
     ].forEach(function (n) { this.u[n] = gl.getUniformLocation(this.prog, n); }, this);
     this.uq = {
       uTex: gl.getUniformLocation(this.quad, 'uTex'),
@@ -285,14 +295,14 @@
   Renderer.prototype.resize = function (W, H) {
     if (this.size[0] === W && this.size[1] === H) return;
     var gl = this.gl;
-    [this.sample, this.rt].forEach(function (t) {
+    [this.sample, this.sampleBlur, this.rt].forEach(function (t) {
       gl.bindTexture(gl.TEXTURE_2D, t);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
     }, this);
     this.size = [W, H];
   };
 
-  Renderer.prototype.setBackdrop = function (src) {
+  Renderer.prototype.setBackdrop = function (src, blurred) {
     var gl = this.gl;
     /* No flip on upload. Pixel y = 0 maps to framebuffer row 0 (see VERT) and
      * sampling uses v = pix.y / H, so texture row r has to be source row r.
@@ -300,6 +310,10 @@
      * down. The one flip that belongs in the pipeline is the final blit. */
     gl.bindTexture(gl.TEXTURE_2D, this.wall);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
+    if (blurred) {
+      gl.bindTexture(gl.TEXTURE_2D, this.wallBlur);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, blurred);
+    }
   };
 
   Renderer.prototype.blit = function (tex, flip) {
@@ -324,7 +338,10 @@
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.rt, 0);
     gl.viewport(0, 0, W, H);
 
-    // the wallpaper is the bottom of the stack
+    // the wallpaper is the bottom of the stack, in both sharp and blurred form
+    this.blit(this.wallBlur, false);
+    gl.bindTexture(gl.TEXTURE_2D, this.sampleBlur);
+    gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 0, 0, W, H);
     this.blit(this.wall, false);
     gl.bindTexture(gl.TEXTURE_2D, this.sample);
     gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 0, 0, W, H);
@@ -336,6 +353,10 @@
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.sample);
     gl.uniform1i(this.u.uBackdrop, 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.sampleBlur);
+    gl.uniform1i(this.u.uBackdropBlur, 1);
+    gl.activeTexture(gl.TEXTURE0);
     gl.uniform2f(this.u.uCanvas, W, H);
   };
 
@@ -351,6 +372,10 @@
     var h = Math.min(H - y, Math.ceil(rect.h + pad * 2));
     if (w <= 0 || h <= 0) return;
     gl.bindTexture(gl.TEXTURE_2D, this.sample);
+    gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, x, y, x, y, w, h);
+    // the blurred stack has to follow, or a surface drawn on top of this one
+    // would blur what was here before instead of what is here now
+    gl.bindTexture(gl.TEXTURE_2D, this.sampleBlur);
     gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, x, y, x, y, w, h);
   };
 
@@ -387,6 +412,7 @@
     gl.uniform1f(u.uDepthEffect, o.depthEffect);
     gl.uniform1f(u.uDispersion, o.dispersion);
     gl.uniform1f(u.uDispersionCorner, o.dispersionCorner);
+    gl.uniform1f(u.uBlurMix, o.blurMix || 0);
     gl.uniform1f(u.uBrightness, o.brightness);
     gl.uniform1f(u.uContrast, o.contrast);
     gl.uniform1f(u.uSaturation, o.saturation);
@@ -438,6 +464,8 @@
     return isNaN(n) ? fallback : n;
   }
 
+  var MAX_ADAPT_BLUR_DP = 16;   // the blurred copy is built at this radius
+
   function buildBackdropCanvas(img, W, H) {
     var cv = document.createElement('canvas');
     cv.width = W; cv.height = H;
@@ -448,11 +476,10 @@
 
     if (img) {
       // background-size: cover, background-position: center
-      var s = Math.max(W / img.width, H / img.height);
-      var dw = img.width * s, dh = img.height * s;
+      var sc = Math.max(W / img.width, H / img.height);
+      var dw = img.width * sc, dh = img.height * sc;
       c.filter = blurPx > 0 ? 'blur(' + blurPx + 'px)' : 'none';
-      // overdraw so the blur does not darken the edges
-      var pad = Math.ceil(blurPx * 3);
+      var pad = Math.ceil(blurPx * 3);   // overdraw so the blur cannot darken the edges
       c.drawImage(img, (W - dw) / 2 - pad, (H - dh) / 2 - pad, dw + pad * 2, dh + pad * 2);
       c.filter = 'none';
     } else {
@@ -463,7 +490,39 @@
       c.fillStyle = 'rgba(0,0,0,' + (1 - brightness) + ')';
       c.fillRect(0, 0, W, H);
     }
-    return cv;
+
+    /* A blurred copy of the same wallpaper. Over a bright backdrop the material
+     * blurs more, so the shader mixes towards this one; over a dark backdrop it
+     * stays sharp. Mixing two fixed levels is not a true variable blur, but it
+     * is monotone in the same direction and costs one extra texture. */
+    var bl = document.createElement('canvas');
+    bl.width = W; bl.height = H;
+    var bc = bl.getContext('2d');
+    var r = MAX_ADAPT_BLUR_DP * dpr;
+    bc.filter = 'blur(' + r + 'px)';
+    var pad2 = Math.ceil(r * 3);
+    bc.drawImage(cv, -pad2, -pad2, W + pad2 * 2, H + pad2 * 2);
+    bc.filter = 'none';
+
+    /* A small luminance map, so the per-surface average is a cheap array read
+     * rather than a GPU reduction. The wallpaper only changes with the track. */
+    var LW = 128, LH = Math.max(1, Math.round(128 * H / W));
+    var sm = document.createElement('canvas');
+    sm.width = LW; sm.height = LH;
+    var sc2 = sm.getContext('2d');
+    sc2.drawImage(cv, 0, 0, LW, LH);
+    var d = sc2.getImageData(0, 0, LW, LH).data;
+    var lum = new Float32Array(LW * LH);
+    for (var i = 0; i < LW * LH; i++) {
+      // sRGB relative luminance
+      var rr = d[i*4] / 255, gg = d[i*4+1] / 255, bb = d[i*4+2] / 255;
+      rr = rr <= 0.04045 ? rr / 12.92 : Math.pow((rr + 0.055) / 1.055, 2.4);
+      gg = gg <= 0.04045 ? gg / 12.92 : Math.pow((gg + 0.055) / 1.055, 2.4);
+      bb = bb <= 0.04045 ? bb / 12.92 : Math.pow((bb + 0.055) / 1.055, 2.4);
+      lum[i] = 0.2126 * rr + 0.7152 * gg + 0.0722 * bb;
+    }
+
+    return { sharp: cv, blurred: bl, lum: lum, lw: LW, lh: LH };
   }
 
   function loadImage(url) {
@@ -512,6 +571,38 @@
   // ---- wiring -------------------------------------------------------------
 
   var canvas, renderer, currentUrl = null, pending = false, haveBackdrop = null;
+  var lumMap = null;
+
+  /* Backdrop's AdaptiveLuminanceGlassContent: the material reads the luminance
+   * behind it and moves. Over a bright backdrop it lifts its own brightness,
+   * crushes contrast and blurs harder; over a dark one it darkens slightly and
+   * stays sharp. That is what keeps text on the glass readable without simply
+   * making the whole thing opaque. */
+  function adaptTo(rect, dpr) {
+    if (!lumMap) return null;
+    var LW = lumMap.lw, LH = lumMap.lh;
+    var W = canvas.width, H = canvas.height;
+    var x0 = Math.max(0, Math.floor(rect.x / W * LW));
+    var x1 = Math.min(LW, Math.ceil((rect.x + rect.w) / W * LW));
+    var y0 = Math.max(0, Math.floor(rect.y / H * LH));
+    var y1 = Math.min(LH, Math.ceil((rect.y + rect.h) / H * LH));
+    if (x1 <= x0 || y1 <= y0) return null;
+    var sum = 0, n = 0;
+    for (var y = y0; y < y1; y++) {
+      for (var x = x0; x < x1; x++) { sum += lumMap.lum[y * LW + x]; n++; }
+    }
+    var lum = sum / n;
+
+    var l = lum * 2 - 1;
+    l = (l < 0 ? -1 : 1) * l * l;          // signed square, as in the catalog
+    var lerp = function (a, b, t) { return a + (b - a) * t; };
+    var blurDp = l > 0 ? lerp(8, 16, l) : lerp(8, 2, -l);
+    return {
+      brightness: l > 0 ? lerp(0.1, 0.5, l) : lerp(0.1, -0.2, -l),
+      contrast: l > 0 ? lerp(1, 0, l) : 1,
+      blurMix: Math.max(0, Math.min(1, blurDp / MAX_ADAPT_BLUR_DP)),
+    };
+  }
 
   /* The wallpaper can be rebuilt; the app's own content cannot. A surface only
    * qualifies while nothing sits between it and the wallpaper, so the test is
@@ -572,7 +663,12 @@
       'backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
       'background:none!important;box-shadow:none!important;border-color:transparent!important;}' +
       /* the canvas draws the wallpaper, so the theme's own layers would double it */
-      '.liquify-bg-layer,.liquify-animated-bg{display:none!important;}';
+      '.liquify-bg-layer,.liquify-animated-bg{display:none!important;}' +
+      /* The lens bends the wallpaper's detail, so the wallpaper must not be
+       * pre-blurred. This belongs here rather than in the theme's CSS: with it
+       * in user.css the toggle's off state was not the untouched theme either,
+       * which made any comparison meaningless. */
+      ':root{--liquify-bg-blur:0px!important;}';
     document.head.appendChild(st);
   }
 
@@ -729,12 +825,21 @@
         x: it.c.left * dpr, y: it.c.top * dpr, w: it.c.width * dpr, h: it.c.height * dpr
       } : null);
 
-      renderer.draw(rect, Object.assign({}, DEFAULTS, {
+      var opts = Object.assign({}, DEFAULTS, {
         height: DEFAULTS.height * scale * dpr,
         amount: DEFAULTS.amount * scale * dpr,
         hlWidth: DEFAULTS.hlWidth * dpr,
         dispersion: mm.t.ca ? DEFAULTS.dispersion : 0
-      }));
+      });
+      if (DEFAULTS.adaptive) {
+        var ad = adaptTo(rect, dpr);
+        if (ad) {
+          opts.brightness = ad.brightness;
+          opts.contrast = ad.contrast;
+          opts.blurMix = ad.blurMix;
+        }
+      }
+      renderer.draw(rect, opts);
       // hand this surface to whatever is drawn on top of it
       renderer.commit(rect, DEFAULTS.amount * dpr + 2);
     }
@@ -777,7 +882,9 @@
         // no cover yet (startup) or the load failed - keep whatever we had and
         // come back for it rather than baking the fallback fill in
         if (!haveBackdrop) {
-          renderer.setBackdrop(buildBackdropCanvas(null, W, H));
+          var f = buildBackdropCanvas(null, W, H);
+          lumMap = f;
+          renderer.setBackdrop(f.sharp, f.blurred);
           haveBackdrop = 'fallback';
         }
         retry = setTimeout(refreshBackdrop, 1000);
@@ -785,7 +892,9 @@
       }
       currentUrl = url;
       haveBackdrop = 'cover';
-      renderer.setBackdrop(buildBackdropCanvas(img, W, H));
+      var b = buildBackdropCanvas(img, W, H);
+      lumMap = b;
+      renderer.setBackdrop(b.sharp, b.blurred);
       render(true);
     });
   }
@@ -850,7 +959,8 @@
           c.fillRect(x, y, sz, sz);
         }
       }
-      renderer.setBackdrop(cv);
+      renderer.setBackdrop(cv, cv);
+      lumMap = null;
       haveBackdrop = 'test';
       render(true);
       return 'test pattern';
