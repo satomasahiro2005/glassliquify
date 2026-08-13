@@ -66,21 +66,6 @@ class Session:
         """本物のポインタ移動。合成 MouseEvent では :hover が立たない。"""
         self.send("Input.dispatchMouseEvent", type="mouseMoved", x=x, y=y, buttons=0)
 
-    def place(self, left, top, width, height):
-        """Put the window somewhere specific.
-
-        Spotify only writes its window position out on a clean exit, and this
-        loop kills it, so it kept coming back on whichever display it had been
-        on when it last shut down properly.
-        """
-        wid = self.send("Browser.getWindowForTarget")["windowId"]
-        self.send("Browser.setWindowBounds", windowId=wid, bounds={
-            "left": int(left), "top": int(top),
-            "width": int(width), "height": int(height),
-            "windowState": "normal",
-        })
-        return self.send("Browser.getWindowForTarget")["bounds"]
-
     def screenshot(self, path):
         r = self.send("Page.captureScreenshot", format="png", captureBeyondViewport=False)
         with open(path, "wb") as f:
@@ -108,8 +93,6 @@ def main():
     elif cmd == "mouse":
         s.mouse(float(sys.argv[2]), float(sys.argv[3]))
         out = "moved to %s,%s" % (sys.argv[2], sys.argv[3])
-    elif cmd == "place":
-        out = s.place(*sys.argv[2:6])
     elif cmd == "shot":
         out = s.screenshot(sys.argv[2] if len(sys.argv) > 2 else "shot.png")
     else:
