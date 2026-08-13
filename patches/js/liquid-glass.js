@@ -43,7 +43,7 @@
     amount: 48,
     depthEffect: 1,
     dispersion: 0.14,
-    dispersionCorner: 0,   // 0 = along the whole edge, 1 = Backdrop's corner-only
+    dispersionCorner: 1,   // 1 = corners only, as Backdrop and iOS do it
     brightness: 0,
     contrast: 1,
     saturation: 1.5,
@@ -168,10 +168,10 @@
     '    vec2 grad = normalize(gradSdRoundedRect(centered, halfSize, gradRadius, uSuperness)',
     '                          + uDepthEffect * normalize(centered + 1e-6));',
     '    refracted = vPix + d * grad;',
-    '    // Backdrop weights dispersion by (x*y)/(hw*hh), which is exactly zero',
-    '    // along both axes - so it only ever shows near the corners. The',
-    '    // shows along the whole edge, including the middle of the horizontal',
-    '    // one, where that term vanishes. uDispersionCorner picks between them.',
+    '    // Dispersion is weighted by (x*y)/(hw*hh), which is exactly zero along',
+    '    // both axes, so it only shows near the corners - which is where iOS',
+    '    // shows it too. uDispersionCorner = 0 spreads it along the whole edge',
+    '    // instead, kept only because it is useful for checking the taps work.',
     '    float uv = (centered.x * centered.y) / (halfSize.x * halfSize.y);',
     '    float di = uDispersion * mix(1.0, uv, uDispersionCorner);',
     '    dispersed = d * grad * di;',
@@ -314,6 +314,7 @@
 
   Renderer.prototype.begin = function () {
     var gl = this.gl;
+    gl.disable(gl.SCISSOR_TEST);
     var W = gl.canvas.width, H = gl.canvas.height;
     this.resize(W, H);
 
@@ -351,8 +352,22 @@
     gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, x, y, x, y, w, h);
   };
 
+  /* Clips a quad to the box that scrolls it, so glass cannot spill out of its
+   * container. Pixel y runs downward here; GL scissor counts from the bottom. */
+  Renderer.prototype.scissor = function (box) {
+    var gl = this.gl;
+    if (!box) { gl.disable(gl.SCISSOR_TEST); return; }
+    var H = this.size[1];
+    gl.enable(gl.SCISSOR_TEST);
+    gl.scissor(Math.max(0, Math.floor(box.x)),
+               Math.max(0, Math.floor(H - (box.y + box.h))),
+               Math.max(0, Math.ceil(box.w)),
+               Math.max(0, Math.ceil(box.h)));
+  };
+
   Renderer.prototype.end = function () {
     var gl = this.gl;
+    gl.disable(gl.SCISSOR_TEST);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
     gl.clearColor(0, 0, 0, 0);
@@ -504,8 +519,12 @@
     canvas.id = 'liquify-lg-canvas';
     canvas.style.cssText =
       'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+    /* Same layer as Liquify's own background: z-index 0 and first child.
+     * z-index 1 paints over the main view's content; z-index -1 falls behind
+     * an opaque ancestor background. Only the position the theme already uses
+     * puts it under the UI and over nothing else. */
     var root = document.querySelector('.Root__top-container') || document.body;
-    root.appendChild(canvas);
+    root.insertBefore(canvas, root.firstChild);
     renderer = new Renderer(canvas);
     return canvas;
   }
@@ -565,13 +584,26 @@
       });
     }
     if (!quiet) flash(enabled ? 'liquid glass: ON' : 'liquid glass: OFF (Liquify 標準)');
-    if (enabled) { rescan(); render(); }
+    if (enabled) { rescan(); render(true); }
   }
 
   /* Selector matching is the expensive part, so it runs on a timer; the rects
    * are re-read every frame because scrolling moves them. */
   var matched = [];
   var drawn = 0;
+
+  /* Selector matching and style resolution are the expensive parts, so they run
+   * on a timer. Only getBoundingClientRect is per-frame, because scrolling
+   * moves things without changing anything else. */
+  function scrollClipOf(el) {
+    for (var q = el.parentElement; q; q = q.parentElement) {
+      var cs = getComputedStyle(q);
+      var o = cs.overflow + cs.overflowX + cs.overflowY;
+      if (o.indexOf('hidden') >= 0 || o.indexOf('auto') >= 0 || o.indexOf('scroll') >= 0) return q;
+      if (q === document.documentElement) break;
+    }
+    return null;
+  }
 
   function rescan() {
     var out = [];
@@ -580,7 +612,16 @@
       var els;
       try { els = document.querySelectorAll(t.selector); } catch (e) { continue; }
       for (var j = 0; j < els.length && out.length < MAX_ELEMENTS; j++) {
-        out.push({ el: els[j], t: t });
+        var el = els[j];
+        var cs = getComputedStyle(el);
+        var cssR = parseFloat(cs.borderTopLeftRadius);
+        out.push({
+          el: el,
+          t: t,
+          radius: (!isNaN(cssR) && cssR > 0) ? cssR : t.radius,
+          hidden: cs.visibility === 'hidden' || cs.display === 'none' || +cs.opacity === 0,
+          clip: scrollClipOf(el)
+        });
       }
     }
     // back to front, so a card samples the shelf it sits on
@@ -591,62 +632,85 @@
       return 0;
     });
     matched = out;
+    sig = '';   // force one redraw after a rescan
   }
 
-  function render() {
+  var sig = '';
+
+  function drop(m) {
+    if (m.el.hasAttribute && m.el.hasAttribute('data-liquify-lg')) {
+      m.el.removeAttribute('data-liquify-lg');
+      m.el.style.clipPath = '';
+      m.el.__lgClip = null;
+    }
+  }
+
+  function render(force) {
     if (!renderer) return;
     var dpr = window.devicePixelRatio || 1;
     var W = Math.round(window.innerWidth * dpr);
     var H = Math.round(window.innerHeight * dpr);
-    if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+    var resized = canvas.width !== W || canvas.height !== H;
+    if (resized) { canvas.width = W; canvas.height = H; }
+
+    // collect first, so nothing is drawn when the layout has not moved
+    var list = [];
+    var s2 = W + 'x' + H;
+    var i;
+    for (i = 0; i < matched.length; i++) {
+      var m = matched[i];
+      if (!m.el.isConnected || m.hidden) { drop(m); continue; }
+      var r = m.el.getBoundingClientRect();
+      if (r.width < 4 || r.height < 4 ||
+          r.bottom <= 0 || r.top >= window.innerHeight ||
+          r.right <= 0 || r.left >= window.innerWidth) { drop(m); continue; }
+      var c = (m.clip && m.clip.isConnected) ? m.clip.getBoundingClientRect() : null;
+      if (c && (r.right <= c.left || r.left >= c.right ||
+                r.bottom <= c.top || r.top >= c.bottom)) { drop(m); continue; }
+      list.push({ m: m, r: r, c: c });
+      s2 += '|' + (r.left | 0) + ',' + (r.top | 0) + ',' + (r.width | 0) + ',' + (r.height | 0);
+    }
+    if (!force && !resized && s2 === sig) return;
+    sig = s2;
 
     renderer.begin();
     drawn = 0;
-    for (var i = 0; i < matched.length; i++) {
-      var m = matched[i];
-      if (!m.el.isConnected) continue;
-      var r = m.el.getBoundingClientRect();
-      if (r.width < 4 || r.height < 4) continue;
-      if (r.bottom <= 0 || r.top >= window.innerHeight || r.right <= 0 || r.left >= window.innerWidth) {
-        if (m.el.hasAttribute('data-liquify-lg')) m.el.removeAttribute('data-liquify-lg');
-        continue;
-      }
-      var cs = getComputedStyle(m.el);
-      if (cs.visibility === 'hidden' || cs.display === 'none' || +cs.opacity === 0) {
-        if (m.el.hasAttribute('data-liquify-lg')) m.el.removeAttribute('data-liquify-lg');
-        continue;
-      }
-      if (!m.el.hasAttribute('data-liquify-lg')) m.el.setAttribute('data-liquify-lg', '');
+    for (i = 0; i < list.length; i++) {
+      var it = list[i], mm = it.m, rr = it.r;
+      if (!mm.el.hasAttribute('data-liquify-lg')) mm.el.setAttribute('data-liquify-lg', '');
       drawn++;
 
-      var radius = m.t.radius;
-      var cssR = parseFloat(cs.borderTopLeftRadius);
-      if (!isNaN(cssR) && cssR > 0) radius = cssR;
+      var minDim = Math.min(rr.width, rr.height);
+      var radius = Math.min(mm.radius, minDim / 2);
+      applySquircle(mm.el, rr.width, rr.height, radius, DEFAULTS.superness);
 
       // a full-size lens on a small chip looks wrong; scale it to what fits
-      var minDim = Math.min(r.width, r.height);
       var scale = Math.min(1, minDim / 96);
-
-      applySquircle(m.el, r.width, r.height, Math.min(radius, minDim / 2), DEFAULTS.superness);
-
       var rect = {
-        x: r.left * dpr, y: r.top * dpr, w: r.width * dpr, h: r.height * dpr,
-        r: Math.min(radius, minDim / 2) * dpr,
+        x: rr.left * dpr, y: rr.top * dpr, w: rr.width * dpr, h: rr.height * dpr,
+        r: radius * dpr
       };
+
+      // glass must not spill out of the box that scrolls it
+      renderer.scissor(it.c ? {
+        x: it.c.left * dpr, y: it.c.top * dpr, w: it.c.width * dpr, h: it.c.height * dpr
+      } : null);
+
       renderer.draw(rect, Object.assign({}, DEFAULTS, {
         height: DEFAULTS.height * scale * dpr,
         amount: DEFAULTS.amount * scale * dpr,
         hlWidth: DEFAULTS.hlWidth * dpr,
-        dispersion: m.t.ca ? DEFAULTS.dispersion : 0,
+        dispersion: mm.t.ca ? DEFAULTS.dispersion : 0
       }));
       // hand this surface to whatever is drawn on top of it
       renderer.commit(rect, DEFAULTS.amount * dpr + 2);
     }
+    renderer.scissor(null);
     renderer.end();
   }
 
   function loop() {
-    if (enabled) render();
+    if (enabled) render(false);
     requestAnimationFrame(loop);
   }
 
@@ -681,7 +745,7 @@
       currentUrl = url;
       haveBackdrop = 'cover';
       renderer.setBackdrop(buildBackdropCanvas(img, W, H));
-      render();
+      render(true);
     });
   }
 
@@ -737,12 +801,12 @@
       }
       renderer.setBackdrop(cv);
       haveBackdrop = 'test';
-      render();
+      render(true);
       return 'test pattern';
     }
 
     window.liquifyLG = {
-      render: render, refresh: refreshBackdrop, rescan: rescan,
+      render: function () { render(true); }, refresh: refreshBackdrop, rescan: rescan,
       testBackdrop: testBackdrop, renderer: renderer,
       defaults: DEFAULTS, targets: TARGETS,
       count: function () { return { matched: matched.length, drawn: drawn }; },
@@ -750,7 +814,7 @@
       on: function () { setEnabled(true); },
       off: function () { setEnabled(false); },
       get enabled() { return enabled; },
-      set: function (patch) { Object.assign(DEFAULTS, patch); render(); return DEFAULTS; },
+      set: function (patch) { Object.assign(DEFAULTS, patch); render(true); return DEFAULTS; },
     };
     console.log(LOG, 'ready:', TARGETS.length, 'selectors, enabled =', enabled);
   }
