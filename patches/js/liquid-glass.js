@@ -46,17 +46,10 @@
       TARGETS.push({ selector: sel, radius: 20, ca: true });
     });
 
-    /* The boxes that hold artwork. The theme never touched them, so a cover in
-     * the now-playing pane or on a shelf card sat on the wallpaper with no
-     * surface under it while everything around it had one. The artwork itself
-     * is opaque and hides the glass behind it; what shows is the margin around
-     * it and the corner it is cut to. */
-    ['.main-nowPlayingView-coverArtVisualEnhancement',
-     '.main-nowPlayingView-contextItemInfo',
-     '.main-card-card',
-     '.main-cardImage-imageWrapper'].forEach(function (sel) {
-      TARGETS.push({ selector: sel, radius: 20, ca: true });
-    });
+    /* Not the shelf cards and not the cover art. Glass belongs where there is
+     * a backdrop to see through it; a card is a cover with a title under it,
+     * and a sheet over that just puts a milky film on the artwork and the
+     * text. The shelf they sit on already carries the surface. */
 
     /* Surfaces that sit on top of the app rather than in it. These want the
      * frosted end of the material: they are asking for attention, and reading
