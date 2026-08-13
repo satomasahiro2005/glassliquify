@@ -21,7 +21,7 @@
   var PRESETS = {
     clear: {
       label: 'クリア',
-      values: { adaptive: false, brightness: 0, contrast: 1, saturation: 1.1,
+      values: { adaptive: false, brightness: 0, contrast: 1, saturation: 1.2,
                 blurMix: 0, surface: [1, 1, 1, 0.03], dispersion: 1,
                 superness: 4, radiusScale: 3, height: 24, amount: 48, hlAlpha: 0.75 },
     },

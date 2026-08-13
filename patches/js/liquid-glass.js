@@ -172,7 +172,7 @@
     dispersionCorner: 1,   // 1 = corners only, as Backdrop and iOS do it
     brightness: 0,
     contrast: 1,
-    saturation: 1.1,   // clear glass barely lifts it; 1.5 reads as a filter
+    saturation: 1.2,   // clear glass barely lifts it; 1.5 reads as a filter
     surface: [1, 1, 1, 0.05],
     hlAngle: 45,
     hlFalloff: 2,
