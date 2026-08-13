@@ -43,7 +43,7 @@
      * a dialog over a sharp wallpaper is hard. Marked here rather than left to
      * the theme, whose own blur is the one being replaced. */
     TARGETS = TARGETS.filter(function (t) {
-      return OVERLAYS.indexOf(t.selector) < 0 && NO_SHEET.indexOf(t.selector) < 0;
+      return OVERLAYS.indexOf(t.selector) < 0;
     });
   }
 
@@ -928,13 +928,10 @@
          * image while the real content slides past. Those keep the theme's own
          * backdrop-filter, which reads the actual backdrop. Surfaces that
          * scroll along with their backdrop are fine. */
-        if ((cs.position === 'sticky' || cs.position === 'fixed') && scrollClipOf(el)) {
-          /* Handing it back to the theme would leave it frosted while
-           * everything around it is clear, which reads as a bug. Strip the
-           * treatment instead: the real content shows through untouched. */
-          el.setAttribute('data-liquify-lg-plain', '');
-          continue;
-        }
+        /* Pinned surfaces are drawn too. Dropping them was meant to stop a
+         * frosted sheet blurring a still wallpaper while a list slid under it,
+         * but the default material does not blur, and skipping them took most
+         * of the app's panels out with them. */
         if (el.hasAttribute('data-liquify-lg-plain')) el.removeAttribute('data-liquify-lg-plain');
         var cssR = parseFloat(cs.borderTopLeftRadius);
         out.push({
@@ -953,21 +950,10 @@
       if (rel & Node.DOCUMENT_POSITION_PRECEDING) return 1;
       return 0;
     });
-    /* Nested targets would stack the material: a card inside a shelf inside a
-     * section re-reads pixels that already went through colorControls and the
-     * tint, so saturation compounds (1.5^3) and the white piles up. The result
-     * is a milky haze over exactly the panels that nest. Keep the outermost
-     * and drop its descendants - Apple does not stack glass either. */
-    var kept = [];
-    for (var m = 0; m < out.length; m++) {
-      var nested = false;
-      for (var k = 0; k < kept.length; k++) {
-        if (kept[k].el.contains(out[m].el) && kept[k].el !== out[m].el) { nested = true; break; }
-      }
-      if (!nested) kept.push(out[m]);
-      else out[m].el.setAttribute('data-liquify-lg-plain', '');
-    }
-    matched = kept;
+    /* Nesting is kept. Dropping descendants was meant to stop the material
+     * stacking, but that haze turned out to be a texture unit left bound, and
+     * the filter was quietly taking two thirds of the app's panels with it. */
+    matched = out;
     sweepThemeGlass();
     sig = '';       // force one redraw after a rescan
     dirty = true;
