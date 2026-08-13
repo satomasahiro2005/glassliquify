@@ -42,7 +42,7 @@
     height: 24,
     amount: 48,
     depthEffect: 1,
-    dispersion: 0.14,
+    dispersion: 1,        // Backdrop passes chromaticAberration = 1.0
     dispersionCorner: 1,   // 1 = corners only, as Backdrop and iOS do it
     brightness: 0,
     contrast: 1,
@@ -294,10 +294,12 @@
 
   Renderer.prototype.setBackdrop = function (src) {
     var gl = this.gl;
+    /* No flip on upload. Pixel y = 0 maps to framebuffer row 0 (see VERT) and
+     * sampling uses v = pix.y / H, so texture row r has to be source row r.
+     * Flipping here turns it into H-1-r and the wallpaper comes out upside
+     * down. The one flip that belongs in the pipeline is the final blit. */
     gl.bindTexture(gl.TEXTURE_2D, this.wall);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);   // canvas row 0 is the top
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
   };
 
   Renderer.prototype.blit = function (tex, flip) {
@@ -405,13 +407,29 @@
    * to a 4K window that is a 13x upscale, and a backdrop that smooth has
    * nothing left for the lens to bend or the dispersion to separate. The
    * xlarge variant is 640px; coverSwipe in the same theme already prefers it. */
-  function coverUrl() {
+  /* The API tops out at ab67616d0000b273, which is 640px - blown up to a 4K
+   * window that is a 3x upscale and there is nothing left for the lens to bend.
+   * The CDN also serves ab67616d000082c1, which is 2000px, for the same id.
+   * It is not in any metadata field, so ask for it and fall back if it 404s. */
+  var COVER_PREFIX_2000 = 'ab67616d000082c1';
+
+  function coverUrls() {
     var m = window.Spicetify && Spicetify.Player && Spicetify.Player.data &&
       Spicetify.Player.data.item && Spicetify.Player.data.item.metadata;
-    if (!m) return null;
+    if (!m) return [];
     var raw = m.image_xlarge_url || m.image_large_url || m.image_url;
-    if (!raw) return null;
-    return raw.replace('spotify:image:', 'https://i.scdn.co/image/');
+    if (!raw) return [];
+    var url = raw.replace('spotify:image:', 'https://i.scdn.co/image/');
+    var out = [];
+    var mm = /^(https:\/\/i\.scdn\.co\/image\/)(ab67616d[0-9a-f]{8})([0-9a-f]+)$/.exec(url);
+    if (mm) out.push(mm[1] + COVER_PREFIX_2000 + mm[3]);
+    out.push(url);
+    return out;
+  }
+
+  function coverUrl() {
+    var u = coverUrls();
+    return u.length ? u[u.length - 1] : null;   // the identity of the track
   }
 
   function cssNumber(name, fallback) {
@@ -542,11 +560,17 @@
     // pass backdropIsKnown() are handed over, everything else keeps Liquify's
     // own glass. z-index lifts them above the canvas so their content still
     // draws on top of the refraction.
+    /* Everything the theme already painted on the surface has to come off, not
+     * just the backdrop-filter. Its border and box-shadow are drawn on the
+     * element's own circular border-radius, so leaving them in place puts a
+     * second, differently-shaped outline on top of the squircle. */
     st.textContent =
       '[data-liquify-lg]{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
-      'background-color:transparent!important;}' +
-      '[data-liquify-lg]::before{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
-      'background:transparent!important;}' +
+      'background:none!important;border-color:transparent!important;' +
+      'box-shadow:none!important;outline:none!important;}' +
+      '[data-liquify-lg]::before,[data-liquify-lg]::after{' +
+      'backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
+      'background:none!important;box-shadow:none!important;border-color:transparent!important;}' +
       /* the canvas draws the wallpaper, so the theme's own layers would double it */
       '.liquify-bg-layer,.liquify-animated-bg{display:none!important;}';
     document.head.appendChild(st);
@@ -734,12 +758,20 @@
     pending = true;
     if (retry) { clearTimeout(retry); retry = null; }
 
+    var urls = coverUrls();
     var url = coverUrl();
     var dpr = window.devicePixelRatio || 1;
     var W = Math.round(window.innerWidth * dpr);
     var H = Math.round(window.innerHeight * dpr);
 
-    Promise.resolve(url ? loadImage(url) : null).then(function (img) {
+    var tryNext = function (i) {
+      if (i >= urls.length) return Promise.resolve(null);
+      return loadImage(urls[i]).then(function (img) {
+        return img || tryNext(i + 1);
+      });
+    };
+
+    tryNext(0).then(function (img) {
       pending = false;
       if (!img) {
         // no cover yet (startup) or the load failed - keep whatever we had and
