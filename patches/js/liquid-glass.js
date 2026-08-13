@@ -161,6 +161,7 @@
     'uniform float uHlFalloff;',
     'uniform float uHlWidth;',
     'uniform float uHlFloor;',
+    'uniform float uOpacity;',
     '',
     'float radiusAt(vec2 coord, vec4 radii) {',
     '  if (coord.x >= 0.0) { if (coord.y <= 0.0) return radii.y; else return radii.z; }',
@@ -254,6 +255,7 @@
     '  float band = 1.0 - smoothstep(uHlWidth - 1.0, uHlWidth + 1.0, -sd);',
     '  color.rgb += uHighlight.rgb * (intensity * band * uHighlight.a);',
     '  float cov = clamp(-sd, 0.0, 1.0);',
+    '  cov *= uOpacity;',
     '  outColor = vec4(color.rgb * cov, cov);',
     '}',
   ].join('\n');
@@ -315,7 +317,7 @@
     this.u = {};
     ['uCanvas','uRect','uRadii','uSuperness','uRefractionHeight','uRefractionAmount',
      'uDepthEffect','uDispersion','uDispersionCorner','uBrightness','uContrast','uSaturation',
-     'uSurface','uHighlight','uHlAngle','uHlFalloff','uHlWidth','uHlFloor','uBackdrop',
+     'uSurface','uHighlight','uHlAngle','uHlFalloff','uHlWidth','uHlFloor','uOpacity','uBackdrop',
      'uBackdropBlur','uBlurMix'
     ].forEach(function (n) { this.u[n] = gl.getUniformLocation(this.prog, n); }, this);
     this.uq = {
@@ -476,6 +478,7 @@
     gl.uniform1f(u.uHlFalloff, o.hlFalloff);
     gl.uniform1f(u.uHlWidth, o.hlWidth);
     gl.uniform1f(u.uHlFloor, o.hlFloor == null ? 0.35 : o.hlFloor);
+    gl.uniform1f(u.uOpacity, o.opacity == null ? 1 : o.opacity);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   };
 
@@ -720,8 +723,11 @@
      * shadows stay - they are the frames that make the panels readable as
      * panels, and stripping them left the sections outline-less. */
     st.textContent =
-      ':is(' + sels + '){backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
-      'background-image:none!important;background-color:transparent!important;}' +
+      /* Selector-wide, only the theme's blur comes off. Stripping backgrounds
+       * here too took out the carousel arrows on Home, whose visible pill is
+       * their background. The fill is dropped per surface below, on the ones we
+       * actually draw. */
+      ':is(' + sels + '){backdrop-filter:none!important;-webkit-backdrop-filter:none!important;}' +
       ':is(' + sels + ')::before,:is(' + sels + ')::after{' +
       'backdrop-filter:none!important;-webkit-backdrop-filter:none!important;}' +
       /* On the surfaces we actually draw, the frame comes from the shader, so
@@ -731,7 +737,8 @@
        * lie on top of each other along the straight edges and separate at the
        * corner, which is exactly the doubled corner. */
       '[data-liquify-lg]{border-color:transparent!important;box-shadow:none!important;' +
-      'outline:none!important;}' +
+      'outline:none!important;background-image:none!important;' +
+      'background-color:transparent!important;}' +
       '[data-liquify-lg]::before,[data-liquify-lg]::after{box-shadow:none!important;' +
       'border-color:transparent!important;background:none!important;}' +
       /* the canvas draws the wallpaper, so the theme's own layers would double it */
@@ -746,7 +753,12 @@
        * inside it and then runs off the bottom of the window. Nothing about it
        * is reachable, so it only shows as content bleeding through the sheet.
        * Measured at 1600x900: panel 8,64 1584x727, row 8,719 1584x408. */
-      '.Root__cinema-view .main-nowPlayingView-section{display:none!important;}';
+      '.Root__cinema-view .main-nowPlayingView-section{display:none!important;}' +
+      /* Full screen is not full screen: the right sidebar stays up at z-index 4
+       * (420x879 next to a 1584-wide cinema panel) and the now-playing rows sit
+       * under it. Nothing there is reachable while the cover is up, so take the
+       * whole column out for as long as it lasts. */
+      'html.liquify-cinema .Root__right-sidebar{display:none!important;}';
     document.head.appendChild(st);
   }
 
@@ -929,6 +941,7 @@
     if (cinema !== null) {
       if (!wasCinema) {
         wasCinema = true;
+        document.documentElement.classList.add('liquify-cinema');
         document.querySelectorAll('[data-liquify-lg],[data-liquify-lg-plain]').forEach(function (el) {
           if (el === cinema) return;
           el.removeAttribute('data-liquify-lg');
@@ -946,6 +959,7 @@
     }
     if (wasCinema) {
       wasCinema = false;
+      document.documentElement.classList.remove('liquify-cinema');
       rescan();
       force = true;
     }
@@ -964,6 +978,12 @@
     for (i = 0; i < matched.length; i++) {
       var m = matched[i];
       if (!m.el.isConnected || m.hidden) { drop(m); continue; }
+      /* Read opacity every frame, not from the 400ms cache. Full screen fades
+       * the top bar and the playbar out on their own timers; drawing from a
+       * stale flag leaves the glass frame hanging there after its element has
+       * gone, and the two bars drop at different moments. */
+      var op = +getComputedStyle(m.el).opacity;
+      if (!(op > 0.02)) { drop(m); continue; }
       var r = m.el.getBoundingClientRect();
       if (r.width < 4 || r.height < 4 ||
           r.bottom <= 0 || r.top >= window.innerHeight ||
@@ -971,8 +991,9 @@
       var c = (m.clip && m.clip.isConnected) ? m.clip.getBoundingClientRect() : null;
       if (c && (r.right <= c.left || r.left >= c.right ||
                 r.bottom <= c.top || r.top >= c.bottom)) { drop(m); continue; }
-      list.push({ m: m, r: r, c: c });
-      s2 += '|' + (r.left | 0) + ',' + (r.top | 0) + ',' + (r.width | 0) + ',' + (r.height | 0);
+      list.push({ m: m, r: r, c: c, op: op });
+      s2 += '|' + (r.left | 0) + ',' + (r.top | 0) + ',' + (r.width | 0) + ',' + (r.height | 0) +
+            ',' + op.toFixed(2);
     }
     if (!force && !resized && s2 === sig) return;
     sig = s2;
@@ -1013,6 +1034,7 @@
       } : null);
 
       var opts = Object.assign({}, DEFAULTS, mm.t.overlay ? OVERLAY_STYLE : null, {
+        opacity: it.op,
         height: DEFAULTS.height * scale * dpr,
         amount: DEFAULTS.amount * scale * dpr,
         hlWidth: DEFAULTS.hlWidth * dpr,
