@@ -647,18 +647,29 @@
     if (st) return;
     st = document.createElement('style');
     st.id = 'liquify-lg-style';
-    // scoped to the attribute, not to the selectors: only the surfaces that
-    // pass backdropIsKnown() are handed over, everything else keeps Liquify's
-    // own glass. z-index lifts them above the canvas so their content still
-    // draws on top of the refraction.
-    /* Everything the theme already painted on the surface has to come off, not
-     * just the backdrop-filter. Its border and box-shadow are drawn on the
-     * element's own circular border-radius, so leaving them in place puts a
-     * second, differently-shaped outline on top of the squircle. */
+    /* Everything the theme painted has to come off every surface it glasses,
+     * not only the ones this frame happens to draw. Scoping this to the
+     * handover attribute left anything off screen, too small or skipped still
+     * frosted while the rest went clear - which is exactly how it looked.
+     *
+     * Its border and box-shadow are drawn on the element's own circular
+     * border-radius too, so leaving them in place puts a second,
+     * differently-shaped outline on top of the squircle. */
+    var sels = TARGETS.map(function (t) { return t.selector; }).join(',');
     st.textContent =
+      ':is(' + sels + '){backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
+      'background:none!important;box-shadow:none!important;border-color:transparent!important;}' +
+      ':is(' + sels + ')::before,:is(' + sels + ')::after{' +
+      'backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
+      'background:none!important;box-shadow:none!important;}' +
       '[data-liquify-lg]{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
       'background:none!important;border-color:transparent!important;' +
       'box-shadow:none!important;outline:none!important;}' +
+      '[data-liquify-lg-plain]{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
+      'background:none!important;box-shadow:none!important;}' +
+      '[data-liquify-lg-plain]::before,[data-liquify-lg-plain]::after{' +
+      'backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
+      'background:none!important;}' +
       '[data-liquify-lg]::before,[data-liquify-lg]::after{' +
       'backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
       'background:none!important;box-shadow:none!important;border-color:transparent!important;}' +
@@ -697,8 +708,9 @@
     setStyle(enabled);
     if (canvas) canvas.style.display = enabled ? '' : 'none';
     if (!enabled) {
-      document.querySelectorAll('[data-liquify-lg]').forEach(function (el) {
+      document.querySelectorAll('[data-liquify-lg],[data-liquify-lg-plain]').forEach(function (el) {
         el.removeAttribute('data-liquify-lg');
+        el.removeAttribute('data-liquify-lg-plain');
         el.style.clipPath = '';
         el.__lgClip = null;
       });
@@ -739,9 +751,14 @@
          * image while the real content slides past. Those keep the theme's own
          * backdrop-filter, which reads the actual backdrop. Surfaces that
          * scroll along with their backdrop are fine. */
-        if (cs.position === 'sticky' || cs.position === 'fixed') {
-          if (scrollClipOf(el)) continue;
+        if ((cs.position === 'sticky' || cs.position === 'fixed') && scrollClipOf(el)) {
+          /* Handing it back to the theme would leave it frosted while
+           * everything around it is clear, which reads as a bug. Strip the
+           * treatment instead: the real content shows through untouched. */
+          el.setAttribute('data-liquify-lg-plain', '');
+          continue;
         }
+        if (el.hasAttribute('data-liquify-lg-plain')) el.removeAttribute('data-liquify-lg-plain');
         var cssR = parseFloat(cs.borderTopLeftRadius);
         out.push({
           el: el,
