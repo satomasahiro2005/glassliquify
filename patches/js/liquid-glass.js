@@ -2387,6 +2387,41 @@
     } catch (e) { /* storage blocked: the theme's own default stands */ }
   }
 
+  /* Liquify's background sliders, taking effect when they are moved.
+   *
+   * The wallpaper is baked, not composed: the blur goes into the draw and the
+   * brightness into a wash over it, and what comes out is uploaded once as a
+   * texture. That bake only ran on a track change, so moving either slider did
+   * nothing until the next song - which reads as a setting that does not work
+   * rather than one that is late.
+   *
+   * The two values are what go into the bake, so they are what is watched.
+   * Liquify writes them inline on <html>, and so do we - the nav height, the
+   * cinema margin, the zoom - which is why the values are compared rather than
+   * the event trusted. A whole config arriving at once is Liquify's own event,
+   * where a property-by-property watch would fire many times for one change. */
+  var bakedFrom = '';
+
+  function backdropInputs() {
+    return cssNumber('--liquify-bg-blur', 0) + '/' + cssNumber('--liquify-bg-brightness', 45);
+  }
+
+  function watchBackdropInputs() {
+    bakedFrom = backdropInputs();
+    new MutationObserver(function () {
+      var s = backdropInputs();
+      if (s === bakedFrom) return;
+      bakedFrom = s;
+      scheduleBackdrop();
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ['style'] });
+
+    window.addEventListener('liquifyConfigApplied', function () {
+      bakedFrom = backdropInputs();
+      scheduleBackdrop();
+      rescan();
+    });
+  }
+
   function start() {
     defaultBackgroundBlur();
     resolveTargets();
@@ -2399,6 +2434,7 @@
       return;
     }
     refreshBackdrop();
+    watchBackdropInputs();
 
     if (window.Spicetify && Spicetify.Player && Spicetify.Player.addEventListener) {
       Spicetify.Player.addEventListener('songchange', function () {
