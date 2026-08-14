@@ -40,6 +40,7 @@
     'ガラス (Ctrl+Shift+G)': 'Glass (Ctrl+Shift+G)', 'Retina 表示': 'Retina scaling',
     '既定に戻す': 'Restore defaults',
     'もう一度押すと戻ります': 'Click again to confirm',
+    'この項目を既定に戻す': 'Restore this setting',
     '設定は次回起動時にも残ります。': 'Settings are kept between restarts.',
     '閉じる': 'Close', '拡大率': 'Zoom',
   };
@@ -156,7 +157,15 @@
     '#liquify-lg-panel .row button{padding:6px 14px;border-radius:10px;cursor:pointer;' +
     'border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#fff;font:inherit;}' +
     '#liquify-lg-panel .row button[disabled]{cursor:default;}' +
-    '#liquify-lg-panel .hint{opacity:.45;font-size:12px;margin-top:10px;}';
+    '#liquify-lg-panel .hint{opacity:.45;font-size:12px;margin-top:10px;}' +
+    /* The revert arrow sits at the end of a row in Liquify's own panel, on the
+     * theme's own stepper shape so it reads as one of its controls rather than
+     * something bolted on. Faded and dead where the row is already at its
+     * default, so the row still shows the way back without claiming there is
+     * one to take. */
+    '.liquifyLgRevert{font-size:13px;line-height:1;flex:0 0 auto;}' +
+    '.liquifyLgRevert[disabled]{opacity:.25;cursor:default;box-shadow:none;}' +
+    '.liquifyLgRevert[disabled]:hover{background:transparent!important;transform:none;}';
 
   function el(tag, attrs, kids) {
     var n = document.createElement(tag);
@@ -452,15 +461,141 @@
     row.appendChild(b);
   }
 
+  /* And a way back for one setting at a time, which is the one you actually
+   * want: having moved five things and disliked one of them, throwing all five
+   * away is not a way back, it is a second mistake.
+   *
+   * The row knows its label and nothing else - the control is bound to a piece
+   * of React state, and which key that state came out of is in the theme's
+   * source and in no attribute. So the pairing is extracted from theme.js by
+   * tools/gen-settings-keys.py, in every language the theme ships, and the row
+   * is matched on the text it is showing. 57 of the 58 rows pair up; the one
+   * left is Performance Mode, whose state is the inverse of the Glass toggle
+   * two rows above it rather than a setting of its own.
+   *
+   * Every row that pairs up gets one, and the ones already at their default
+   * get it faded and dead: a control that comes and goes is one you have to
+   * hunt for, and the fade still says at a glance what has been changed. */
+  var rowIndex = null;
+
+  function labelKey(text) {
+    return (text || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function rowTable() {
+    if (rowIndex) return rowIndex;
+    rowIndex = {};
+    var rows = window.__liquifySettingRows || [];
+    rows.forEach(function (r) {
+      r.labels.forEach(function (l) { rowIndex[labelKey(l)] = r; });
+    });
+    return rowIndex;
+  }
+
+  /* Liquify's default for the wallpaper blur is 7px and this fork's is 0 - the
+   * renderer sets it once at first start, because a lens has nothing to bend
+   * if what it is handed arrives soft. A reset that put 7 back would undo that
+   * silently, and the renderer would not set it again. */
+  function defaultOf(entry) {
+    return entry.key === 'liquify-bg-blur' ? '0' : String(entry['default']);
+  }
+
+  function rowLabelText(row) {
+    var l = row.querySelector('.liquifyLabel');
+    if (!l) return '';
+    var c = l.cloneNode(true);
+    /* The help bubble is a child of the label and its text is a question mark,
+     * which is not part of what the row is called. */
+    var help = c.querySelectorAll('.liquifyHelpIcon');
+    for (var i = 0; i < help.length; i++) help[i].parentNode.removeChild(help[i]);
+    return labelKey(c.textContent);
+  }
+
+  function atDefault(entry) {
+    var v = localStorage.getItem(entry.key);
+    return v === null || String(v) === defaultOf(entry);
+  }
+
+  function decorateRows(panel) {
+    var table = rowTable();
+    var rows = panel.querySelectorAll('.liquifyRow');
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      var entry = table[rowLabelText(row)];
+      var have = row.querySelector('.liquifyLgRevert');
+      if (!entry) {
+        /* The one row with nothing behind it is Performance Mode, whose state
+         * is the inverse of the Glass toggle rather than a key of its own. */
+        if (have) have.parentNode.removeChild(have);
+        continue;
+      }
+      if (!have) {
+        have = revertButton(entry);
+        row.appendChild(have);
+      }
+      have.disabled = atDefault(entry);
+    }
+  }
+
+  function revertButton(entry) {
+    var b = el('button', {
+      type: 'button', class: 'liquifyControlSurface liquifyStepperBtn liquifyLgRevert',
+      text: '↺', title: t('この項目を既定に戻す'),
+    });
+    b.addEventListener('click', function () {
+      if (b.disabled) return;
+      /* Written rather than removed: the value is the theme's own default in
+       * every case but the one above, and writing it keeps that exception from
+       * needing a second path. */
+      localStorage.setItem(entry.key, defaultOf(entry));
+      try {
+        if (window.liquifyApplyAllSettings) window.liquifyApplyAllSettings();
+      } catch (e) { /* older theme: it will be read on the next start */ }
+      window.dispatchEvent(new Event('liquifyConfigApplied'));
+    });
+    return b;
+  }
+
   /* Hung off the two things that put the panel on screen - Liquify's gear, and
    * the remount its own config event causes - rather than an observer over the
    * tree. The panel is absent almost all of the time, and asking after it on
    * every insertion anywhere in the app is a great deal of looking for
-   * something that is usually not there. */
+   * something that is usually not there.
+   *
+   * Once it is up, though, it re-renders on its own - a dropdown changes which
+   * rows exist, the search box hides them - so an observer follows it for as
+   * long as it is there, and that one is scoped to the panel. */
+  var followed = null, panelObs = null, inPass = false;
+
+  function ensureNow() {
+    var panel = document.querySelector('.liquifySettingsPanel');
+    if (!panel) return;
+    ensureResetButton();
+    decorateRows(panel);
+    if (panel === followed) return;
+    if (panelObs) panelObs.disconnect();
+    followed = panel;
+    panelObs = new MutationObserver(function () {
+      if (inPass) return;
+      inPass = true;
+      try {
+        if (!panel.isConnected) {
+          panelObs.disconnect();
+          panelObs = null;
+          followed = null;
+          return;
+        }
+        ensureResetButton();
+        decorateRows(panel);
+      } finally { inPass = false; }
+    });
+    panelObs.observe(panel, { childList: true, subtree: true });
+  }
+
   function ensureSoon() {
     var n = 0;
     (function tick() {
-      ensureResetButton();
+      ensureNow();
       if (++n < 8) setTimeout(tick, 120);
     })();
   }
