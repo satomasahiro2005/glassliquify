@@ -9,6 +9,40 @@
 
   var KEY = 'liquify-lg-settings';
 
+  /* Japanese where the app is Japanese, English otherwise. Spotify's own
+   * language is the honest source - the panel sits among its controls, so it
+   * should read like them rather than like the machine's locale. */
+  var EN = {
+    'クリア': 'Clear', '適応': 'Adaptive', 'くもり': 'Frosted',
+    '屈折の幅': 'Refraction', '屈折の量': 'Amount', '色収差': 'Dispersion',
+    '角の大きさ': 'Corner size', '角の角ばり': 'Corner shape', '深さ': 'Depth',
+    '彩度': 'Saturation', 'ぼかし': 'Blur', '縁の光': 'Rim', '光の角度': 'Light angle',
+    '白の濃さ': 'Tint',
+    'ガラス (Ctrl+Shift+G)': 'Glass (Ctrl+Shift+G)', 'Retina 表示': 'Retina scaling',
+    'リセット': 'Reset', '既定に戻す': 'Restore defaults',
+    '設定は次回起動時にも残ります。': 'Settings are kept between restarts.',
+    '閉じる': 'Close', 'この画面はすでに 2x です': 'This display is already 2x',
+  };
+
+  /* Asked for when it is needed, not when this file loads: Spotify sets
+   * <html lang> after its own boot, so reading it at load time answered for an
+   * empty string and the panel came out English in a Japanese client. */
+  function isJa() {
+    /* Asked each time, never cached. Spotify answers 'en' early in its own
+     * boot before the user's language loads, and caching that answer left a
+     * Japanese client with an English panel for the rest of the session. */
+    var l = '';
+    try {
+      if (window.Spicetify && Spicetify.Locale && Spicetify.Locale.getLocale) {
+        l = Spicetify.Locale.getLocale() || '';
+      }
+    } catch (e) { /* older Spicetify */ }
+    if (!l) l = document.documentElement.lang || navigator.language || '';
+    return /^ja/i.test(l);
+  }
+
+  function t(jp) { return isJa() ? jp : (EN[jp] || jp); }
+
   /* Named starting points rather than a wall of sliders.
    *
    * clear    - nothing between you and the wallpaper but the lens. no blur, no
@@ -66,9 +100,12 @@
      * it over the controls it sits beside and gave the sliders nowhere to go
      * once there were more than a handful. Liquify's own settings are a
      * centred sheet; this one matches, so the pair reads as one thing. */
+    /* Nothing over the app behind it: no dim, no blur. This panel exists to
+     * adjust a material you judge by looking at it, and a scrim that softens
+     * the very thing being tuned makes it impossible to see what the sliders
+     * are doing. It is only here to catch a click outside. */
     '#liquify-lg-scrim{position:fixed;inset:0;z-index:99998;display:flex;' +
-    'align-items:center;justify-content:center;background:rgba(0,0,0,.45);' +
-    'backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);}' +
+    'align-items:center;justify-content:center;background:transparent;}' +
     '#liquify-lg-scrim[hidden]{display:none;}' +
     '#liquify-lg-panel{width:min(420px,calc(100vw - 64px));max-height:min(680px,80vh);' +
     'display:flex;flex-direction:column;border-radius:20px;' +
@@ -238,13 +275,13 @@
 
     var presets = el('div', { class: 'presets' });
     Object.keys(PRESETS).forEach(function (k) {
-      var b = el('button', { text: PRESETS[k].label });
+      var b = el('button', { text: t(PRESETS[k].label) });
       b.dataset.k = k;
       b.addEventListener('click', function () { applyPreset(k); });
       presets.appendChild(b);
     });
 
-    var closeBtn = el('button', { class: 'x', text: '×', title: '閉じる' });
+    var closeBtn = el('button', { class: 'x', text: '×', title: t('閉じる') });
     var body = el('div', { class: 'body' }, [presets]);
     var panel = el('div', { id: 'liquify-lg-panel' }, [
       el('div', { class: 'head' }, [el('h3', { text: 'Liquid Glass' }), closeBtn]),
@@ -274,7 +311,7 @@
         save();
       });
       inputs[s.k] = { input: input, out: out };
-      body.appendChild(el('label', {}, [el('span', { text: s.label }), input, out]));
+      body.appendChild(el('label', {}, [el('span', { text: t(s.label) }), input, out]));
     });
 
     var toggle = el('button', { text: window.liquifyLG.enabled ? 'ON' : 'OFF' });
@@ -282,7 +319,7 @@
       toggle.textContent = window.liquifyLG.toggle() ? 'ON' : 'OFF';
     });
     body.appendChild(el('div', { class: 'row' }, [
-      el('span', { text: 'ガラス (Ctrl+Shift+G)' }), toggle,
+      el('span', { text: t('ガラス (Ctrl+Shift+G)') }), toggle,
     ]));
 
     /* Treat the display as Retina.
@@ -296,7 +333,7 @@
     var retina = el('button', { text: retinaOn() ? '2x' : '1x' });
     if (!retinaUseful()) {
       retina.disabled = true;
-      retina.title = 'この画面はすでに 2x です';
+      retina.title = t('この画面はすでに 2x です');
       retina.style.opacity = '.4';
       retina.style.cursor = 'default';
     }
@@ -306,16 +343,16 @@
       retina.textContent = on ? '2x' : '1x';
     });
     body.appendChild(el('div', { class: 'row' }, [
-      el('span', { text: 'Retina 表示' }), retina,
+      el('span', { text: t('Retina 表示') }), retina,
     ]));
 
-    var reset = el('button', { text: '既定に戻す' });
+    var reset = el('button', { text: t('既定に戻す') });
     reset.addEventListener('click', function () { applyPreset('clear'); });
     body.appendChild(el('div', { class: 'row' }, [
-      el('span', { text: 'リセット' }), reset,
+      el('span', { text: t('リセット') }), reset,
     ]));
 
-    body.appendChild(el('div', { class: 'hint', text: '設定は次回起動時にも残ります。' }));
+    body.appendChild(el('div', { class: 'hint', text: t('設定は次回起動時にも残ります。') }));
     document.body.appendChild(scrim);
 
     function open(on) {
@@ -336,9 +373,19 @@
     syncInputs();
   }
 
+  /* Wait for the language too. The labels are written once when the panel is
+   * built, and Spotify sets <html lang> after its own boot, so building the
+   * moment the renderer exists produced an English panel in a Japanese client.
+   * The deadline is there so a client that never sets it still gets a panel. */
+  var waited = 0;
+
   function wait() {
-    if (window.liquifyLG && document.body) build();
-    else setTimeout(wait, 300);
+    var ready = window.liquifyLG && document.body;
+    var known = document.documentElement.lang ||
+      (window.Spicetify && Spicetify.Locale && Spicetify.Locale.getLocale &&
+       Spicetify.Locale.getLocale());
+    if (ready && (known || waited > 8000)) build();
+    else { waited += 300; setTimeout(wait, 300); }
   }
   wait();
 })();

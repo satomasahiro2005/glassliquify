@@ -1362,7 +1362,11 @@
         restore(el);
       });
     }
-    if (!quiet) flash(enabled ? 'liquid glass: ON' : 'liquid glass: OFF (Liquify 標準)');
+    if (!quiet) {
+      var ja = /^ja/i.test((document.documentElement.lang || navigator.language || ''));
+      flash(enabled ? 'liquid glass: ON'
+        : 'liquid glass: OFF (' + (ja ? 'Liquify 標準' : 'stock Liquify') + ')');
+    }
     /* The backdrop is rebuilt on the way back in. It is only refreshed on a
      * track change or a resize, and both can happen while this is off - the
      * window was resized with the toggle down and every surface came back
