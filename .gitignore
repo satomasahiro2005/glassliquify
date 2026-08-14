@@ -1,2 +1,4 @@
 dist/
 lab/shots/
+tools/__pycache__/
+lab/compare/

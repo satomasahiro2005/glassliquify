@@ -11,13 +11,7 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEFAULT = os.path.join(
-    os.environ.get("TEMP", "/tmp"),
-    "claude", "C--Users-masahiro", "1ec8b939-a485-4d13-bf26-aded8da7f5f3",
-    "scratchpad", "kyant", "x-HEAD", "AndroidLiquidGlass-HEAD",
-    "backdrop", "src", "commonMain", "kotlin", "com", "kyant", "backdrop",
-    "internal", "Shaders.kt",
-)
+DEFAULT = os.path.join(ROOT, "Shaders.kt")
 
 src_path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT
 src = open(src_path, encoding="utf-8").read()
@@ -46,11 +40,41 @@ def expand(text, depth=0):
 
 out = {k: expand(v) for k, v in blocks.items()}
 
+# Kyant's notice travels with Kyant's code. This file holds their shader
+# source verbatim - the extraction only lifts it out of Kotlin - so Apache-2.0
+# section 4(c) binds it exactly as it binds Shaders.kt, and Shaders.kt carries
+# this header.
+HEADER = """/* AGSL shader source from Backdrop, extracted verbatim.
+ *
+ *   https://github.com/Kyant0/AndroidLiquidGlass
+ *   backdrop/src/commonMain/kotlin/com/kyant/backdrop/internal/Shaders.kt
+ *
+ *   Copyright 2025 Kyant
+ *
+ *   Licensed under the Apache License, Version 2.0 (the "License");
+ *   you may not use this file except in compliance with the License.
+ *   You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * A copy of the License is in licenses/Apache-2.0-Backdrop.txt. The shader
+ * bodies below are unchanged; this file exists so the GLSL port can be checked
+ * against them.
+ *
+ * Generated - do not edit by hand.
+ * Regenerate: python tools/gen-agsl.py <path to Shaders.kt>
+ */
+"""
+
 dst = os.path.join(ROOT, "lab", "agsl-source.js")
 with open(dst, "w", encoding="utf-8") as f:
-    f.write("/* generated from Backdrop's Shaders.kt - do not edit by hand.\n")
-    f.write(" * regenerate: python tools/gen-agsl.py <path to Shaders.kt>\n")
-    f.write(" * source: " + src_path.replace("\\", "/") + "\n */\n")
+    f.write(HEADER)
     f.write("window.AGSL = " + json.dumps(out, ensure_ascii=False, indent=1) + ";\n")
 
 print("blocks:", ", ".join(sorted(out)))

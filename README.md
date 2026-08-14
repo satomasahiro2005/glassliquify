@@ -6,13 +6,14 @@ refraction, dispersion and highlight shaders.
 
 **This fork**
 
-![after](docs/images/after.jpg)
+![after](https://raw.githubusercontent.com/satomasahiro2005/glassliquify/fork/docs/images/after.jpg)
 
 **Liquify as it ships**
 
-![before](docs/images/before.jpg)
+![before](https://raw.githubusercontent.com/satomasahiro2005/glassliquify/fork/docs/images/before.jpg)
 
 `Ctrl+Shift+G` switches between the two at runtime.
+
 
 ---
 
@@ -56,7 +57,7 @@ compared pixel by pixel.
 **Over 72,000 pixels: maximum channel difference 1/255, mean 0.0000278, and no
 pixel differs by more than 1.** That is inside 8-bit rounding.
 
-![verify](docs/images/24-verify.jpg)
+![verify](https://raw.githubusercontent.com/satomasahiro2005/glassliquify/fork/docs/images/24-verify.jpg)
 
 ## Installing
 
@@ -75,13 +76,27 @@ so `spicetify config current_theme Liquify` puts everything back.
   presets, plus refraction width and amount, dispersion, corner shape,
   saturation, blur, rim strength and light angle
 
-See [FORK.md](FORK.md) for how the fork is structured and [NOTICE.md](NOTICE.md)
+See [FORK.md](https://github.com/satomasahiro2005/glassliquify/blob/fork/FORK.md) for how the fork is structured and [NOTICE.md](https://github.com/satomasahiro2005/glassliquify/blob/fork/NOTICE.md)
 for what came from where.
 
 ## Licence
 
-Liquify is AGPL-3.0, so this is AGPL-3.0. The shaders are ported from Backdrop,
-which is Apache-2.0. [NOTICE.md](NOTICE.md) says which files come from which.
+glassliquify is a fork of [Liquify](https://github.com/NMWplays/Liquify)
+(Copyright NMWplays) and is distributed under the
+**[GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0.txt)**,
+as that licence requires of a derivative work.
+
+Copyright (c) 2026 nemut.ai for this fork's own work.
+
+The refraction, dispersion and rim shaders are ported from
+[Backdrop](https://github.com/Kyant0/AndroidLiquidGlass) (Copyright 2025 Kyant),
+**Apache License 2.0** — a copy travels with the source at
+[`licenses/Apache-2.0-Backdrop.txt`](https://github.com/satomasahiro2005/glassliquify/blob/fork/licenses/Apache-2.0-Backdrop.txt).
+Apache-2.0 combines into AGPL-3.0 in that direction; the combined work is
+AGPL-3.0 and Kyant's terms continue to apply to their part.
+
+Which file came from where, and what was changed, is in
+[NOTICE.md](https://github.com/satomasahiro2005/glassliquify/blob/fork/NOTICE.md).
 
 ---
 ---

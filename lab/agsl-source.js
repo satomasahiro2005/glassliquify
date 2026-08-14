@@ -1,6 +1,28 @@
-/* generated from Backdrop's Shaders.kt - do not edit by hand.
- * regenerate: python tools/gen-agsl.py <path to Shaders.kt>
- * source: C:/Users/masahiro/AppData/Local/Temp/claude/C--Users-masahiro/1ec8b939-a485-4d13-bf26-aded8da7f5f3/scratchpad/kyant/x-HEAD/AndroidLiquidGlass-HEAD/backdrop/src/commonMain/kotlin/com/kyant/backdrop/internal/Shaders.kt
+/* AGSL shader source from Backdrop, extracted verbatim.
+ *
+ *   https://github.com/Kyant0/AndroidLiquidGlass
+ *   backdrop/src/commonMain/kotlin/com/kyant/backdrop/internal/Shaders.kt
+ *
+ *   Copyright 2025 Kyant
+ *
+ *   Licensed under the Apache License, Version 2.0 (the "License");
+ *   you may not use this file except in compliance with the License.
+ *   You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * A copy of the License is in licenses/Apache-2.0-Backdrop.txt. The shader
+ * bodies below are unchanged; this file exists so the GLSL port can be checked
+ * against them.
+ *
+ * Generated - do not edit by hand.
+ * Regenerate: python tools/gen-agsl.py <path to Shaders.kt>
  */
 window.AGSL = {
  "RoundedRectSDF": "\nfloat radiusAt(float2 coord, float4 radii) {\n    if (coord.x >= 0.0) {\n        if (coord.y <= 0.0) return radii.y;\n        else return radii.z;\n    } else {\n        if (coord.y <= 0.0) return radii.x;\n        else return radii.w;\n    }\n}\n\nfloat sdRoundedRect(float2 coord, float2 halfSize, float radius) {\n    float2 cornerCoord = abs(coord) - (halfSize - float2(radius));\n    float outside = length(max(cornerCoord, 0.0)) - radius;\n    float inside = min(max(cornerCoord.x, cornerCoord.y), 0.0);\n    return outside + inside;\n}\n\nfloat2 gradSdRoundedRect(float2 coord, float2 halfSize, float radius) {\n    float2 cornerCoord = abs(coord) - (halfSize - float2(radius));\n    if (cornerCoord.x >= 0.0 || cornerCoord.y >= 0.0) {\n        return sign(coord) * normalize(max(cornerCoord, 0.0));\n    } else {\n        float gradX = step(cornerCoord.y, cornerCoord.x);\n        return sign(coord) * float2(gradX, 1.0 - gradX);\n    }\n}",

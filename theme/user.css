@@ -1,3 +1,22 @@
+/* glassliquify - Liquify with liquid glass drawn in WebGL.
+ *
+ * Copyright (c) 2026 nemut.ai
+ * Modified from NMWplays/Liquify (upstream 69dbb54, 2026-08-10), 2026-08.
+ *
+ * This program is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU Affero General Public License as published by the
+ * Free Software Foundation, either version 3 of the License, or (at your
+ * option) any later version. It is distributed WITHOUT ANY WARRANTY; without
+ * even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+ * PURPOSE. See the GNU Affero General Public License for more details.
+ *
+ *   Licence, source and full attribution:
+ *   https://github.com/satomasahiro2005/glassliquify
+ *   Licence text: https://www.gnu.org/licenses/agpl-3.0.txt
+ *
+ * Parts of the glass shaders are ported from Backdrop (Copyright 2025 Kyant,
+ * Apache-2.0) - see NOTICE.md in the repository above.
+ */
 /*
   Liquify V2 – Liquid Glass theme for Spicetify
   Static styles only. The GlassSurface effect (SVG displacement filter) is

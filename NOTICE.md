@@ -1,21 +1,26 @@
 # 由来と権利表示
 
-このリポジトリは2つの別々の作品を含む。ライセンスが違うので混ぜないこと。
+このリポジトリは3つの別々の作品を含む。ライセンスが違うので混ぜないこと。
 
 ## Liquify（このフォークの土台）
 
 - 出所: https://github.com/NMWplays/Liquify
 - 著作権: NMWplays
 - ライセンス: **AGPL-3.0**（`LICENSE`）
-- 該当ファイル: `user.css`, `theme.js`, `color.ini`, `preview.png`,
-  `discord-icon.png`, `README.md`
+- 無改変で持っているファイル: `user.css`, `theme.js`, `color.ini`, `preview.png`,
+  `discord-icon.png`
+- 変更したファイル: `README.md`（先頭にこのフォークの説明を足した。以降は
+  upstream のまま）、`manifest.json`（下記）
+- upstream の `user.css` には reactbits.dev の GlassSurface の移植が含まれる
+  （`user.css` 冒頭のコメント）。Liquify から引き継いだもので、こちらが
+  加えたものではない。
 
 `manifest.json` だけは Marketplace 用にこのフォークのものへ差し替えてある
 （配布物の名前・作者・読み込むファイルを書くファイルなので、upstream のままでは
 別のテーマを指してしまう）。
 
-これらは**一切編集していない**。変更は `patches/` に分けてあり、ビルド時に
-連結する（`FORK.md` 参照）。
+上の「無改変」の5つは**一切編集していない**。変更は `patches/` に分けてあり、
+ビルド時に連結する（`FORK.md` 参照）。
 
 ## Backdrop（旧 AndroidLiquidGlass）
 
@@ -54,8 +59,12 @@ AGSL は GLSL とスカラー名が違うだけなので、移植は型名の置
 
 - 著作権: **Copyright (c) 2026 nemut.ai**
 - ライセンス: **AGPL-3.0**（`LICENSE`）
-- 該当ファイル: `patches/`, `tools/`, `lab/`, `guard/`, `build.ps1`, `deploy.ps1`,
-  `FORK.md`, `NOTICE.md`, および `README.md` のうちフォークについて書いた部分
+- 該当ファイル: `patches/`, `tools/`, `guard/`, `build.ps1`, `deploy.ps1`,
+  `FORK.md`, `NOTICE.md`, `lab/` のうち下記を除いたもの、および `README.md` の
+  うちフォークについて書いた部分
+- **`lab/agsl-source.js` は含まない。**あれは Kyant の AGSL 原文を Kotlin から
+  取り出しただけのもので、中身は Backdrop のコードそのもの。著作権は Kyant に
+  あり、Apache-2.0 のまま。ファイル冒頭に向こうの表示を入れてある。
 
 土台の Liquify が AGPL-3.0 なので、この派生物も AGPL-3.0 で配布する。AGPL は
 派生物に同じライセンスを要求し、変更点の明示も求めるので、何をどう変えたかは
@@ -72,9 +81,13 @@ AGSL は GLSL とスカラー名が違うだけなので、移植は型名の置
 This repository contains three things with different owners.
 
 **Liquify**, the theme this forks — https://github.com/NMWplays/Liquify —
-Copyright NMWplays, AGPL-3.0. Its files (`user.css`, `theme.js`, `color.ini`,
-`manifest.json`, `preview.png`, `discord-icon.png`) are unmodified; every change
-lives in `patches/` and is concatenated at build time.
+Copyright NMWplays, AGPL-3.0. `user.css`, `theme.js`, `color.ini`, `preview.png`
+and `discord-icon.png` are unmodified; every change lives in `patches/` and is
+concatenated at build time. `README.md` has this fork's description prepended,
+and `manifest.json` is replaced, because it names the theme and the files to
+load and upstream's would have the Marketplace install Liquify under this name.
+Upstream's `user.css` itself contains a port of reactbits.dev's GlassSurface,
+inherited rather than written here.
 
 **Backdrop** — https://github.com/Kyant0/AndroidLiquidGlass — Copyright 2025
 Kyant, Apache-2.0; a verbatim copy of their LICENSE is in
@@ -83,5 +96,7 @@ Kyant, Apache-2.0; a verbatim copy of their LICENSE is in
 port is checked against the original pixel by pixel in `lab/verify.html`:
 72000 pixels, maximum channel difference 1/255.
 
-**This fork** — Copyright (c) 2026 nemut.ai, AGPL-3.0. Because Liquify is
+**This fork** — Copyright (c) 2026 nemut.ai, AGPL-3.0, except
+`lab/agsl-source.js`, which is Kyant's shader source lifted out of Kotlin and
+stays Apache-2.0 under their copyright. Because Liquify is
 AGPL-3.0, so is this derivative.

@@ -1,5 +1,18 @@
 /* Liquid glass in WebGL2.
  *
+ * Copyright (c) 2026 nemut.ai. Licensed under the GNU Affero General Public
+ * License v3.0; see LICENSE.
+ *
+ * The ported shader bodies are from Backdrop:
+ *
+ *   https://github.com/Kyant0/AndroidLiquidGlass
+ *   Copyright 2025 Kyant
+ *   Licensed under the Apache License, Version 2.0.
+ *   A copy is in licenses/Apache-2.0-Backdrop.txt.
+ *
+ * Changed from that original: written in GLSL rather than AGSL, and the corner
+ * is a superellipse rather than a circular arc.
+ *
  * The shaders below are a port of Kyant0/AndroidLiquidGlass (Backdrop),
  * Apache-2.0, from AGSL. AGSL is GLSL with different scalar names, so the
  * refraction, dispersion and highlight bodies are kept line for line:
