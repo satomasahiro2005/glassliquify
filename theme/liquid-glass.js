@@ -73,6 +73,15 @@
       TARGETS.push({ selector: sel, radius: 20, ca: true, notInside: '.Root__nav-bar' });
     });
 
+    /* The whole top bar as one sheet.
+     *
+     * Nothing paints the strip Spotify reserves for the window buttons, so the
+     * bare wallpaper showed through there while the rest of the bar sat on
+     * glass - a bright block at the right end with the account button on it.
+     * The bar spans the full width, so giving it a sheet covers the reserved
+     * strip too and the row reads as one piece. */
+    TARGETS.push({ selector: '#global-nav-bar', radius: 20, ca: true });
+
     /* Controls the theme's list misses: the icons at the top right, and the
      * library header's collapse and create buttons. They sit in the same rows
      * as surfaces that do have glass, so leaving them flat is what stands
