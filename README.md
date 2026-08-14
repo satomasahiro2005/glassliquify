@@ -1,4 +1,4 @@
-# GlassLiquify
+# [GlassLiquify](https://github.com/satomasahiro2005/GlassLiquify)
 
 A fork of [Liquify](https://github.com/NMWplays/Liquify) that replaces the
 theme's glass with a WebGL port of [Backdrop](https://github.com/Kyant0/AndroidLiquidGlass)'s
