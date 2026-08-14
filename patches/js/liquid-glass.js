@@ -618,7 +618,9 @@
     { prefix: COVER_PREFIX_2000, px: 2000 },
   ];
 
-  var MAX_COVER_UPGRADES_PER_PASS = 8;
+  var NOW_PLAYING_COVERS = '.Root__cinema-view, .main-nowPlayingView-coverArt, ' +
+                           '.main-nowPlayingWidget-coverArt, .main-coverSlotExpanded-container';
+  var MAX_COVER_UPGRADES_PER_PASS = 3;
   var coverTried = {};        // prefix+id -> 'ok' | 'no', so a 404 is asked once
 
   function upgradeCovers() {
@@ -630,6 +632,11 @@
       var raw = im.getAttribute('src') || '';
       var m = /(ab67616d[0-9a-f]{8})([0-9a-f]+)$/.exec(raw);
       if (!m) continue;
+      /* The playing track's cover, and nothing else. That is the one shown
+       * large enough for the size to matter; a shelf thumbnail gains a few
+       * pixels of sharpness and pays for it by reloading an image that was
+       * already on screen, which is a card going blank for a moment. */
+      if (!im.closest(NOW_PLAYING_COVERS)) continue;
       var q = im.getBoundingClientRect();
       var need = Math.max(q.width, q.height) * dpr;
       if (need < 8) continue;
@@ -664,6 +671,11 @@
   }
 
   function probeBigCover(im, key, orig, url) {
+    /* No crossOrigin. The probe exists so the swap comes out of cache with
+     * nothing to download, and a CORS request is a different cache entry from
+     * the plain one an <img> makes - with it set, assigning the src started a
+     * second fetch of a 2000px image and the card sat there half-drawn or
+     * blank until it finished. Nothing here reads the pixels. */
     var probe = new Image();
     probe.onload = function () {
       coverTried[key] = 'ok';
