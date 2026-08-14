@@ -602,21 +602,24 @@
    * It is not in any metadata field, so ask for it and fall back if it 404s. */
   var COVER_PREFIX_2000 = 'ab67616d000082c1';
 
-  /* The same 2000px variant, for the covers the app itself shows.
+  /* Every cover at a size it does not have to be stretched to.
    *
-   * Spotify picks a cover size from its own metadata, and the largest it
-   * knows about is 640. Full screen puts that in a 626px slot, which at dpr 2
-   * is 1252 device pixels - a 2x upscale, and it looks like one. The CDN has
-   * 2000px for the same id; it is just not in any field, so it has to be asked
-   * for.
+   * Spotify picks from its own metadata and the largest size in there is 640,
+   * so full screen puts a 640 in a slot 1253 device pixels wide - a 2x upscale
+   * on the one image the whole screen is showing. Row thumbnails have the
+   * opposite problem in miniature: a 300 stretched to 323.
    *
-   * Only slots big enough to show the difference. Swapping every 64px row
-   * thumbnail for a 2000px decode would cost far more than it could ever
-   * return. */
-  var MIN_BIG_COVER_DEVICE_PX = 400;
-  var bigCover = {};          // id -> 'ok' | 'no', so a 404 is asked once
+   * The CDN serves 300, 640 and 2000 for the same id. Pick the smallest one
+   * that is at least as large as the slot. Not simply the largest available:
+   * a 2000px decode behind a 48px tile costs a great deal and shows nothing. */
+  var COVER_SIZES = [
+    { prefix: 'ab67616d00001e02', px: 300 },
+    { prefix: 'ab67616d0000b273', px: 640 },
+    { prefix: COVER_PREFIX_2000, px: 2000 },
+  ];
 
-  var MAX_COVER_UPGRADES_PER_PASS = 3;
+  var MAX_COVER_UPGRADES_PER_PASS = 8;
+  var coverTried = {};        // prefix+id -> 'ok' | 'no', so a 404 is asked once
 
   function upgradeCovers() {
     var dpr = window.devicePixelRatio || 1;
@@ -626,24 +629,32 @@
       var im = imgs[i];
       var raw = im.getAttribute('src') || '';
       var m = /(ab67616d[0-9a-f]{8})([0-9a-f]+)$/.exec(raw);
-      /* No flag on the element. The test is the src itself, so a React
-       * re-render that puts the original back is simply upgraded again. */
-      if (!m || m[1] === COVER_PREFIX_2000) continue;
+      if (!m) continue;
       var q = im.getBoundingClientRect();
       var need = Math.max(q.width, q.height) * dpr;
-      if (need < MIN_BIG_COVER_DEVICE_PX) continue;
-      if (im.naturalWidth && im.naturalWidth >= need * 0.95) continue;
-      /* On screen only, and a few at a time. A list caught mid-render reports
-       * dozens of covers at full size for a frame; fetching a 2000px decode
-       * for each of those would cost seconds and show nothing. */
+      if (need < 8) continue;
+      /* On screen only. A list caught mid-render reports dozens of covers at
+       * full size for a frame. */
       if (q.bottom <= 0 || q.top >= window.innerHeight ||
           q.right <= 0 || q.left >= window.innerWidth) continue;
+      /* naturalWidth, not the prefix - Spotify uses more than one id for the
+       * same size and the loaded image is the only honest answer. */
+      if (im.naturalWidth && im.naturalWidth >= need * 0.95) continue;
+
+      var want = COVER_SIZES[COVER_SIZES.length - 1];
+      for (var k = 0; k < COVER_SIZES.length; k++) {
+        if (COVER_SIZES[k].px >= need) { want = COVER_SIZES[k]; break; }
+      }
+      if (m[1] === want.prefix) continue;
+      if (im.naturalWidth && want.px <= im.naturalWidth) continue;   // no better to be had
+
       var id = m[2];
-      if (bigCover[id] === 'no') continue;
+      var key = want.prefix + id;
+      if (coverTried[key] === 'no') continue;
+      var url = 'https://i.scdn.co/image/' + key;
       started++;
-      var url = 'https://i.scdn.co/image/' + COVER_PREFIX_2000 + id;
-      if (bigCover[id] === 'ok') { setBigCover(im, raw, url); continue; }
-      probeBigCover(im, id, raw, url);
+      if (coverTried[key] === 'ok') { setBigCover(im, raw, url); continue; }
+      probeBigCover(im, key, raw, url);
     }
   }
 
@@ -652,13 +663,13 @@
     im.src = url;
   }
 
-  function probeBigCover(im, id, orig, url) {
+  function probeBigCover(im, key, orig, url) {
     var probe = new Image();
     probe.onload = function () {
-      bigCover[id] = 'ok';
+      coverTried[key] = 'ok';
       if (im.isConnected) setBigCover(im, orig, url);
     };
-    probe.onerror = function () { bigCover[id] = 'no'; };
+    probe.onerror = function () { coverTried[key] = 'no'; };
     probe.src = url;
   }
 
