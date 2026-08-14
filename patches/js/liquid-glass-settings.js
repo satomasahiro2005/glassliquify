@@ -127,8 +127,16 @@
     return localStorage.getItem(RETINA_KEY) === 'on';
   }
 
+  /* Only where the display is not already one. This is CSS zoom, and on a
+   * screen that is genuinely 2x it doubles what is already doubled: the whole
+   * app goes off the edges and the control that would undo it goes with it.
+   * Asked for on a retina display, it does nothing and says so. */
+  function retinaUseful() {
+    return (window.devicePixelRatio || 1) < 1.5;
+  }
+
   function applyRetina() {
-    document.documentElement.style.zoom = retinaOn() ? '2' : '';
+    document.documentElement.style.zoom = (retinaOn() && retinaUseful()) ? '2' : '';
   }
 
   /* Toggling this live leaves half the app measured at the old scale, so it is
@@ -264,6 +272,12 @@
      * coordinate system and none of the drawing maths changes. Checked in the
      * app rather than assumed. */
     var retina = el('button', { text: retinaOn() ? '2x' : '1x' });
+    if (!retinaUseful()) {
+      retina.disabled = true;
+      retina.title = 'この画面はすでに 2x です';
+      retina.style.opacity = '.4';
+      retina.style.cursor = 'default';
+    }
     retina.addEventListener('click', function () {
       var on = !retinaOn();
       setRetina(on);
