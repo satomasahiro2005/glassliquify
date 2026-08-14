@@ -765,7 +765,11 @@
     cv.width = W; cv.height = H;
     var c = cv.getContext('2d');
     var dpr = window.devicePixelRatio || 1;
-    var blurPx = cssNumber('--liquify-bg-blur', 7) * dpr;
+    /* The theme's own background blur, read and not overridden. This used to
+     * be forced to 0 with !important and then read back, so Liquify's slider
+     * moved a number that could never take effect. The fork's default is set
+     * once at startup instead - see defaultBackgroundBlur. */
+    var blurPx = cssNumber('--liquify-bg-blur', 0) * dpr;
     var brightness = cssNumber('--liquify-bg-brightness', 45) / 100;
 
     if (img) {
@@ -1277,11 +1281,7 @@
       /* the canvas draws the wallpaper, so the theme's own layers would double it */
       'html.liquify-lg-wall .liquify-bg-layer,' +
       'html.liquify-lg-wall .liquify-animated-bg{display:none!important;}' +
-      /* The lens bends the wallpaper's detail, so the wallpaper must not be
-       * pre-blurred. This belongs here rather than in the theme's CSS: with it
-       * in user.css the toggle's off state was not the untouched theme either,
-       * which made any comparison meaningless. */
-      ':root{--liquify-bg-blur:0px!important;}' +
+
       /* Full screen is not full screen: the right sidebar stays up at z-index 4
        * (420x879 next to a 1584-wide cinema panel) and the now-playing rows sit
        * under it. Nothing there is reachable while the cover is up, so take the
@@ -2161,7 +2161,23 @@
     });
   }
 
+  /* This fork ships with the wallpaper sharp: the lens has nothing to bend if
+   * it arrives already soft. Liquify's default is 7px and it writes the
+   * variable inline on <html>, which no stylesheet default can lose to
+   * politely, so the default is changed where the theme keeps it - once, with
+   * a marker, so a later choice of theirs is never overwritten. Liquify's own
+   * slider still moves it and is still honoured. */
+  function defaultBackgroundBlur() {
+    try {
+      if (localStorage.getItem('liquify-lg-bg-blur-default') === '1') return;
+      localStorage.setItem('liquify-lg-bg-blur-default', '1');
+      localStorage.setItem('liquify-bg-blur', '0');
+      document.documentElement.style.setProperty('--liquify-bg-blur', '0px');
+    } catch (e) { /* storage blocked: the theme's own default stands */ }
+  }
+
   function start() {
+    defaultBackgroundBlur();
     resolveTargets();
     try {
       ensureCanvas();
