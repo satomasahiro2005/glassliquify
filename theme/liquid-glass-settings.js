@@ -38,7 +38,8 @@
     '彩度': 'Saturation', 'ぼかし': 'Blur', '縁の光': 'Rim', '光の角度': 'Light angle',
     '白の濃さ': 'Tint',
     'ガラス (Ctrl+Shift+G)': 'Glass (Ctrl+Shift+G)', 'Retina 表示': 'Retina scaling',
-    'リセット': 'Reset', '既定に戻す': 'Restore defaults',
+    '既定に戻す': 'Restore defaults',
+    'もう一度押すと戻ります': 'Click again to confirm',
     '設定は次回起動時にも残ります。': 'Settings are kept between restarts.',
     '閉じる': 'Close', '拡大率': 'Zoom',
   };
@@ -356,11 +357,10 @@
       el('span', { text: t('拡大率') }), zoomOut,
     ]));
 
-    var reset = el('button', { text: t('既定に戻す') });
-    reset.addEventListener('click', function () { applyPreset('clear'); });
-    body.appendChild(el('div', { class: 'row' }, [
-      el('span', { text: t('リセット') }), reset,
-    ]));
+    /* No reset row here. It called applyPreset('clear'), which is what the
+     * クリア button at the top of the panel already does - a second control
+     * for the same click, one scroll below the first. Pressing a preset again
+     * is the way back, and it is where you are already looking. */
 
     body.appendChild(el('div', { class: 'hint', text: t('設定は次回起動時にも残ります。') }));
     document.body.appendChild(scrim);
@@ -382,6 +382,93 @@
     if (!localStorage.getItem(KEY)) applyPreset('clear');
     syncInputs();
   }
+
+  /* A way back out of Liquify's own settings.
+   *
+   * There are about forty of them and no reset. The config box will export
+   * what you have and take one back, which covers moving a set-up between
+   * machines, but nothing puts the theme back to how it arrived - so an
+   * evening of trying things is a one-way trip unless you exported first.
+   *
+   * Liquify keeps every one of them in localStorage under its own prefix and
+   * falls back to the default whenever a key is missing, so removing them is
+   * the reset; liquifyApplyAllSettings re-reads the lot, and the panel is
+   * listening for liquifyConfigApplied and remounts itself on it. Ours are
+   * left alone - liquify-lg* is this extension, and its own panel has its own
+   * button - and so is the onboarding marker, which is not a setting and would
+   * put the tour back on the next start.
+   *
+   * Two clicks, because it throws away everything at once and there is no
+   * undo. Not confirm(): a modal dialog in this window blocks the app. */
+  function restoreLiquifyDefaults() {
+    var doomed = [];
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf('liquify-') === 0 && k.indexOf('liquify-lg') !== 0 &&
+          k !== 'liquify-onboarding-done') doomed.push(k);
+    }
+    doomed.forEach(function (k) { localStorage.removeItem(k); });
+    /* Except the one this fork already has an opinion about. Liquify's default
+     * background blur is 7px, and the wallpaper is baked from it - a lens has
+     * nothing to bend if what it is given arrives soft. Letting the reset put
+     * 7 back would undo the fork's own default, which the renderer only sets
+     * once and would not set again. */
+    localStorage.setItem('liquify-bg-blur', '0');
+    try {
+      if (window.liquifyApplyAllSettings) window.liquifyApplyAllSettings();
+    } catch (e) { /* older theme: the reload will pick it up */ }
+    window.dispatchEvent(new Event('liquifyConfigApplied'));
+    return doomed.length;
+  }
+
+  /* The panel is React and remounts itself - on the config event, and whenever
+   * it is reopened - so the button has to be put back rather than added once.
+   * The collection is live, so the common case (no panel on screen) is a
+   * length check rather than a query over the tree. */
+  var configActions = document.getElementsByClassName('liquifyConfigActions');
+
+  function ensureResetButton() {
+    if (!configActions.length) return;
+    var row = configActions[0];
+    if (row.querySelector('#liquify-lg-reset')) return;
+    var b = el('button', {
+      id: 'liquify-lg-reset', type: 'button',
+      class: 'liquifyControlSurface liquifyActionBtn', text: t('既定に戻す'),
+    });
+    var armed = null;
+    b.addEventListener('click', function () {
+      if (!armed) {
+        b.textContent = t('もう一度押すと戻ります');
+        armed = setTimeout(function () {
+          armed = null;
+          b.textContent = t('既定に戻す');
+        }, 4000);
+        return;
+      }
+      clearTimeout(armed);
+      armed = null;
+      restoreLiquifyDefaults();
+    });
+    row.appendChild(b);
+  }
+
+  /* Hung off the two things that put the panel on screen - Liquify's gear, and
+   * the remount its own config event causes - rather than an observer over the
+   * tree. The panel is absent almost all of the time, and asking after it on
+   * every insertion anywhere in the app is a great deal of looking for
+   * something that is usually not there. */
+  function ensureSoon() {
+    var n = 0;
+    (function tick() {
+      ensureResetButton();
+      if (++n < 8) setTimeout(tick, 120);
+    })();
+  }
+
+  document.addEventListener('click', function (e) {
+    if (e.target && e.target.closest && e.target.closest('#liquify-settings-gear-btn')) ensureSoon();
+  }, true);
+  window.addEventListener('liquifyConfigApplied', ensureSoon);
 
   /* Wait for the language too. The labels are written once when the panel is
    * built, and Spotify sets <html lang> after its own boot, so building the
