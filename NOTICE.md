@@ -6,9 +6,13 @@
 
 - 出所: https://github.com/NMWplays/Liquify
 - 著作権: NMWplays
-- ライセンス: **AGPL-3.0**（`LICENSE.txt`）
-- 該当ファイル: `user.css`, `theme.js`, `color.ini`, `manifest.json`, `preview.png`,
+- ライセンス: **AGPL-3.0**（`LICENSE`）
+- 該当ファイル: `user.css`, `theme.js`, `color.ini`, `preview.png`,
   `discord-icon.png`, `README.md`
+
+`manifest.json` だけは Marketplace 用にこのフォークのものへ差し替えてある
+（配布物の名前・作者・読み込むファイルを書くファイルなので、upstream のままでは
+別のテーマを指してしまう）。
 
 これらは**一切編集していない**。変更は `patches/` に分けてあり、ビルド時に
 連結する（`FORK.md` 参照）。
@@ -46,5 +50,35 @@ AGSL は GLSL とスカラー名が違うだけなので、移植は型名の置
 
 ## このフォークで書いた部分
 
-`patches/`, `tools/`, `lab/`, `guard/`, `build.ps1`, `deploy.ps1`, `FORK.md`。
-土台が AGPL-3.0 なので、全体を配布する場合は AGPL-3.0 に従う。
+- 著作権: **Copyright (c) 2026 nemut.ai**
+- ライセンス: **AGPL-3.0**（`LICENSE`）
+- 該当ファイル: `patches/`, `tools/`, `lab/`, `guard/`, `build.ps1`, `deploy.ps1`,
+  `FORK.md`, `NOTICE.md`, および `README.md` のうちフォークについて書いた部分
+
+土台の Liquify が AGPL-3.0 なので、この派生物も AGPL-3.0 で配布する。AGPL は
+派生物に同じライセンスを要求し、変更点の明示も求めるので、何をどう変えたかは
+`FORK.md` とコミット履歴に残してある。
+
+ライセンス本文は `LICENSE` の1つだけ。upstream は同じ内容を `LICENSE.txt` という
+名前で置いているが、GitHub がライセンスとして認識するのは `LICENSE` なので、
+同一のバイト列を2つ持つのをやめてこちらに寄せた。本文も条件も upstream のまま。
+
+---
+
+# Attribution and licensing (English)
+
+This repository contains three things with different owners.
+
+**Liquify**, the theme this forks — https://github.com/NMWplays/Liquify —
+Copyright NMWplays, AGPL-3.0. Its files (`user.css`, `theme.js`, `color.ini`,
+`manifest.json`, `preview.png`, `discord-icon.png`) are unmodified; every change
+lives in `patches/` and is concatenated at build time.
+
+**Backdrop** — https://github.com/Kyant0/AndroidLiquidGlass — Copyright 2025
+Kyant, Apache-2.0. The refraction, seven-tap dispersion and rim highlight in
+`patches/js/liquid-glass.js` are a GLSL port of its AGSL runtime shaders. The
+port is checked against the original pixel by pixel in `lab/verify.html`:
+72000 pixels, maximum channel difference 1/255.
+
+**This fork** — Copyright (c) 2026 nemut.ai, AGPL-3.0. Because Liquify is
+AGPL-3.0, so is this derivative.

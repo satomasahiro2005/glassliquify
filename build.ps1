@@ -33,3 +33,22 @@ $text = $sb.ToString() -replace "`r`n", "`n"
 [System.IO.File]::WriteAllText((Join-Path $dist 'user.css'), $text, (New-Object System.Text.UTF8Encoding $false))
 
 Write-Host "built: $dist  ($($patches.Count) patch(es), $($text.Length) bytes user.css)"
+
+# theme/ is the distributable copy, and unlike dist/ it is committed: the
+# Marketplace installs a theme by reading files out of the repository, so what
+# it needs has to be in there rather than produced on someone's machine.
+$theme = Join-Path $root 'theme'
+if (Test-Path $theme) { Remove-Item $theme -Recurse -Force }
+New-Item -ItemType Directory -Path $theme | Out-Null
+foreach ($f in @('user.css', 'color.ini', 'theme.js')) {
+    Copy-Item (Join-Path $dist $f) (Join-Path $theme $f)
+}
+Copy-Item (Join-Path $root 'preview.png') (Join-Path $theme 'preview.png')
+
+# Generated data files first: the consumers read their globals at startup.
+$js = Get-ChildItem (Join-Path $root 'patches\js') -Filter '*.js' -File |
+      Sort-Object @{ Expression = { if ($_.Name -like '*.generated.js') { 0 } else { 1 } } }, Name
+foreach ($f in $js) { Copy-Item $f.FullName (Join-Path $theme $f.Name) }
+
+Write-Host "packaged: $theme  ($($js.Count) extension(s))"
+
