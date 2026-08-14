@@ -602,6 +602,74 @@
    * It is not in any metadata field, so ask for it and fall back if it 404s. */
   var COVER_PREFIX_2000 = 'ab67616d000082c1';
 
+  /* The same 2000px variant, for the covers the app itself shows.
+   *
+   * Spotify picks a cover size from its own metadata, and the largest it
+   * knows about is 640. Full screen puts that in a 626px slot, which at dpr 2
+   * is 1252 device pixels - a 2x upscale, and it looks like one. The CDN has
+   * 2000px for the same id; it is just not in any field, so it has to be asked
+   * for.
+   *
+   * Only slots big enough to show the difference. Swapping every 64px row
+   * thumbnail for a 2000px decode would cost far more than it could ever
+   * return. */
+  var MIN_BIG_COVER_DEVICE_PX = 400;
+  var bigCover = {};          // id -> 'ok' | 'no', so a 404 is asked once
+
+  var MAX_COVER_UPGRADES_PER_PASS = 3;
+
+  function upgradeCovers() {
+    var dpr = window.devicePixelRatio || 1;
+    var imgs = document.querySelectorAll('img[src*="ab67616d"]');
+    var started = 0;
+    for (var i = 0; i < imgs.length && started < MAX_COVER_UPGRADES_PER_PASS; i++) {
+      var im = imgs[i];
+      var raw = im.getAttribute('src') || '';
+      var m = /(ab67616d[0-9a-f]{8})([0-9a-f]+)$/.exec(raw);
+      /* No flag on the element. The test is the src itself, so a React
+       * re-render that puts the original back is simply upgraded again. */
+      if (!m || m[1] === COVER_PREFIX_2000) continue;
+      var q = im.getBoundingClientRect();
+      var need = Math.max(q.width, q.height) * dpr;
+      if (need < MIN_BIG_COVER_DEVICE_PX) continue;
+      if (im.naturalWidth && im.naturalWidth >= need * 0.95) continue;
+      /* On screen only, and a few at a time. A list caught mid-render reports
+       * dozens of covers at full size for a frame; fetching a 2000px decode
+       * for each of those would cost seconds and show nothing. */
+      if (q.bottom <= 0 || q.top >= window.innerHeight ||
+          q.right <= 0 || q.left >= window.innerWidth) continue;
+      var id = m[2];
+      if (bigCover[id] === 'no') continue;
+      started++;
+      var url = 'https://i.scdn.co/image/' + COVER_PREFIX_2000 + id;
+      if (bigCover[id] === 'ok') { setBigCover(im, raw, url); continue; }
+      probeBigCover(im, id, raw, url);
+    }
+  }
+
+  function setBigCover(im, orig, url) {
+    if (!im.__lgOrigSrc) im.__lgOrigSrc = orig;
+    im.src = url;
+  }
+
+  function probeBigCover(im, id, orig, url) {
+    var probe = new Image();
+    probe.onload = function () {
+      bigCover[id] = 'ok';
+      if (im.isConnected) setBigCover(im, orig, url);
+    };
+    probe.onerror = function () { bigCover[id] = 'no'; };
+    probe.src = url;
+  }
+
+  function restoreCovers() {
+    document.querySelectorAll('img').forEach(function (im) {
+      if (!im.__lgOrigSrc) return;
+      im.src = im.__lgOrigSrc;
+      im.__lgOrigSrc = null;
+    });
+  }
+
   function coverUrls() {
     var m = window.Spicetify && Spicetify.Player && Spicetify.Player.data &&
       Spicetify.Player.data.item && Spicetify.Player.data.item.metadata;
@@ -1206,6 +1274,7 @@
       });
       swept.clear();
       sweepCursor = 0;
+      restoreCovers();
       document.documentElement.classList.remove('liquify-lg-wall');
       document.documentElement.classList.remove('liquify-cinema');
       document.querySelectorAll('[' + FLOAT_ATTR + ']').forEach(function (el) {
@@ -1377,6 +1446,7 @@
     matched = out;
     sweepThemeGlass();
     collectScrollNodes();
+    upgradeCovers();
     sig = '';       // force one redraw after a rescan
     dirty = true;
   }
