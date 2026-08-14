@@ -1,4 +1,4 @@
-# glassliquify
+# GlassLiquify
 
 A fork of [Liquify](https://github.com/NMWplays/Liquify) that replaces the
 theme's glass with a WebGL port of [Backdrop](https://github.com/Kyant0/AndroidLiquidGlass)'s
@@ -81,7 +81,7 @@ for what came from where.
 
 ## Licence
 
-glassliquify is a fork of [Liquify](https://github.com/NMWplays/Liquify)
+GlassLiquify is a fork of [Liquify](https://github.com/NMWplays/Liquify)
 (Copyright NMWplays) and is distributed under the
 **[GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0.txt)**,
 as that licence requires of a derivative work.

@@ -1,4 +1,4 @@
-/* glassliquify - Liquify with liquid glass drawn in WebGL.
+/* GlassLiquify - Liquify with liquid glass drawn in WebGL.
  *
  * Copyright (c) 2026 nemut.ai
  * Modified from NMWplays/Liquify (upstream 69dbb54, 2026-08-10), 2026-08.

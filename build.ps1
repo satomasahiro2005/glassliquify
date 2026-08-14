@@ -60,7 +60,7 @@ foreach ($f in $js) { Copy-Item $f.FullName (Join-Path $theme $f.Name) }
 # do. Anything that already carries Kyant's Apache notice is left alone rather
 # than stamped twice.
 $stamp = @"
-/* glassliquify - Liquify with liquid glass drawn in WebGL.
+/* GlassLiquify - Liquify with liquid glass drawn in WebGL.
  *
  * Copyright (c) 2026 nemut.ai
  * Modified from NMWplays/Liquify (upstream 69dbb54, 2026-08-10), 2026-08.
@@ -95,7 +95,7 @@ foreach ($name in @('user.css') + ($js | ForEach-Object { $_.Name })) {
 # carry the licence and a pointer, because they reach an installer with
 # nothing else attached. The copies in the repository root stay pristine.
 $upstreamStamp = @"
-%%CS%% glassliquify redistributes this file from NMWplays/Liquify unchanged.
+%%CS%% GlassLiquify redistributes this file from NMWplays/Liquify unchanged.
 %%C%%
 %%C%% Liquify: Copyright NMWplays, GNU Affero General Public License v3.0.
 %%C%% This distribution: https://github.com/satomasahiro2005/glassliquify
