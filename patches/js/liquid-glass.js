@@ -249,6 +249,7 @@
     'uniform float uHlFloor;',
     'uniform float uOpacity;',
     'uniform vec4 uClip;',   // x, y, x2, y2 in device px
+    'uniform float uClipRadius;',
     '',
     'float radiusAt(vec2 coord, vec4 radii) {',
     '  if (coord.x >= 0.0) { if (coord.y <= 0.0) return radii.y; else return radii.z; }',
@@ -356,7 +357,18 @@
     '                 min(vPix.y - uClip.y, uClip.w - vPix.y));',
     '  band *= smoothstep(0.0, 16.0, dc);',
     '  color.rgb += uHighlight.rgb * (intensity * band * uHighlight.a);',
-    '  float cov = clamp(-sd, 0.0, 1.0);',
+    /* Coverage follows the container's corner, not just its box. The scissor
+     * is a rectangle, so a panel sitting inside a rounded one was cut square
+     * and its bottom edge came out below the curve of the box holding it -
+     * the inner sheet visibly outside its own container at the corners. */
+    '  float ccov = 1.0;',
+    '  if (uClipRadius > 0.5) {',
+    '    vec2 chalf = (uClip.zw - uClip.xy) * 0.5;',
+    '    vec2 ccen = (uClip.zw + uClip.xy) * 0.5;',
+    '    float csd = sdRoundedRect(vPix - ccen, chalf, uClipRadius, uSuperness);',
+    '    ccov = clamp(-csd, 0.0, 1.0);',
+    '  }',
+    '  float cov = clamp(-sd, 0.0, 1.0) * ccov;',
     '  cov *= uOpacity;',
     '  outColor = vec4(color.rgb * cov, cov);',
     '}',
@@ -424,7 +436,7 @@
     this.u = {};
     ['uCanvas','uRect','uRadii','uSuperness','uRefractionHeight','uRefractionAmount',
      'uDepthEffect','uDispersion','uDispersionCorner','uBrightness','uContrast','uSaturation',
-     'uSurface','uHighlight','uHlAngle','uHlFalloff','uHlWidth','uHlFloor','uOpacity','uClip','uBackdrop',
+     'uSurface','uHighlight','uHlAngle','uHlFalloff','uHlWidth','uHlFloor','uOpacity','uClip','uClipRadius','uBackdrop',
      'uBackdropBlur','uBlurMix'
     ].forEach(function (n) { this.u[n] = gl.getUniformLocation(this.prog, n); }, this);
     this.uq = {
@@ -577,8 +589,13 @@
     var gl = this.gl, u = this.u;
     gl.uniform4f(u.uRect, rect.x, rect.y, rect.w, rect.h);
     var cb = this.clipBox;
-    if (cb) gl.uniform4f(u.uClip, cb.x, cb.y, cb.x + cb.w, cb.y + cb.h);
-    else gl.uniform4f(u.uClip, -1e6, -1e6, 1e6, 1e6);
+    if (cb) {
+      gl.uniform4f(u.uClip, cb.x, cb.y, cb.x + cb.w, cb.y + cb.h);
+      gl.uniform1f(u.uClipRadius, cb.r || 0);
+    } else {
+      gl.uniform4f(u.uClip, -1e6, -1e6, 1e6, 1e6);
+      gl.uniform1f(u.uClipRadius, 0);
+    }
     gl.uniform4f(u.uRadii, rect.r, rect.r, rect.r, rect.r);
     gl.uniform1f(u.uSuperness, o.superness);
     gl.uniform1f(u.uRefractionHeight, Math.max(0.01, o.height));
@@ -1928,6 +1945,7 @@
        * inside another panel has a rim of its own, and without this it is drawn
        * past the parent's edge - the frame pokes out through its container. */
       var clipBox = it.c;
+      var clipRounded = false;
       var ancestors = [];
       for (var a = mm.el.parentElement; a; a = a.parentElement) {
         ancestors.push(a);
@@ -1941,6 +1959,7 @@
         var bounds = nodeStyle(anc).boundsByStyle ||
                      anc.hasAttribute('data-liquify-lg');
         if (!bounds) continue;
+        if (anc.hasAttribute('data-liquify-lg')) clipRounded = true;
         var q = anc.getBoundingClientRect();
         if (q.width < 4 || q.height < 4) continue;
         clipBox = clipBox ? {
@@ -1957,7 +1976,10 @@
 
       // glass must not spill out of the box that scrolls it
       renderer.scissor(it.c ? {
-        x: it.c.left * dpr, y: it.c.top * dpr, w: it.c.width * dpr, h: it.c.height * dpr
+        x: it.c.left * dpr, y: it.c.top * dpr, w: it.c.width * dpr, h: it.c.height * dpr,
+        /* The radius travels with the box: if what clips this surface is one
+         * of ours it has the uniform corner, and the cut has to follow it. */
+        r: (clipRounded ? radius : 0) * dpr
       } : null);
 
       var opts = Object.assign({}, DEFAULTS, {
@@ -2225,6 +2247,35 @@
       off: function () { setEnabled(false); },
       get enabled() { return enabled; },
       set: function (patch) { Object.assign(DEFAULTS, patch); render(true); return DEFAULTS; },
+      /* Paint every surface flat, a different hue each, instead of as glass.
+       * Judging what is drawn by looking at glass is guesswork - the material
+       * hides its own edges, which is the point of it. Flat colour shows the
+       * regions exactly. Hues are spread by the golden angle rather than
+       * alternating two colours, because alternating cannot show two surfaces
+       * on the same spot: the parity never changes. */
+      debugSurfaces: function (on) {
+        if (!on) {
+          if (renderer.__origDraw) { renderer.draw = renderer.__origDraw; renderer.__origDraw = null; }
+          render(true);
+          return false;
+        }
+        if (renderer.__origDraw) return true;
+        renderer.__origDraw = renderer.draw;
+        var od = renderer.__origDraw, i = 0;
+        renderer.draw = function (rect, o) {
+          var h = (i++ * 137.5) % 360;
+          var x = 1 - Math.abs(((h / 60) % 2) - 1), c = [0, 0, 0, 1];
+          if (h < 60) { c[0] = 1; c[1] = x; } else if (h < 120) { c[0] = x; c[1] = 1; }
+          else if (h < 180) { c[1] = 1; c[2] = x; } else if (h < 240) { c[1] = x; c[2] = 1; }
+          else if (h < 300) { c[0] = x; c[2] = 1; } else { c[0] = 1; c[2] = x; }
+          return od.call(renderer, rect, Object.assign({}, o, {
+            surface: c, dispersion: 0, amount: 0, height: 0.01, blurMix: 0,
+            hlAlpha: 1, hlFloor: 1, hlWidth: 3, saturation: 1, brightness: 0, contrast: 1,
+          }));
+        };
+        render(true);
+        return true;
+      },
     };
     console.log(LOG, 'ready:', TARGETS.length, 'selectors, enabled =', enabled);
   }
