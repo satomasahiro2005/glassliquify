@@ -1535,9 +1535,6 @@
 
   function drawCinema(el) {
     var dpr = window.devicePixelRatio || 1;
-    var W = Math.round(window.innerWidth * dpr);
-    var H = Math.round(window.innerHeight * dpr);
-    if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
 
     var r = el.getBoundingClientRect();
     if (r.width < 4 || r.height < 4) return;
@@ -1550,7 +1547,6 @@
     var radius = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 20;
     radius = Math.min(radius, Math.min(r.width, r.height) / 2);
 
-    renderer.begin();
     renderer.scissor(null);
     var rect = {
       x: r.left * dpr, y: r.top * dpr, w: r.width * dpr, h: r.height * dpr,
@@ -1561,8 +1557,10 @@
       amount: DEFAULTS.amount * dpr,
       hlWidth: DEFAULTS.hlWidth * dpr
     }));
-    renderer.end();
-    drawn = 1;
+    /* Handed on, so the panels drawn over it refract the sheet rather than
+     * the bare wallpaper - the same nesting every other surface gets. */
+    renderer.commit(rect, DEFAULTS.amount * dpr + 2);
+    drawn++;
   }
 
   function drop(m) {
@@ -1678,6 +1676,15 @@
   function render(force) {
     if (!renderer) return;
 
+    /* Full screen used to be one sheet and nothing else. That was right when
+     * it was one sheet - now it holds real panels (about the artist, the
+     * credits, the queue), and drawing only the backing sheet left every one
+     * of them on the theme's own filter while the rest of the app had ours.
+     * From the outside that reads as the glass disappearing when you go full
+     * screen.
+     *
+     * So the sheet is drawn first and the normal pass runs on top of it,
+     * restricted to what is actually inside full screen. */
     var cinema = cinemaPanel();
     if (cinema !== null) {
       if (!wasCinema) {
@@ -1687,16 +1694,13 @@
           if (el === cinema) return;
           el.removeAttribute('data-liquify-lg');
           el.removeAttribute('data-liquify-lg-plain');
-          el.style.removeProperty('box-shadow');
-          el.style.removeProperty('border-color');
+          restore(el);
         });
+        rescan();
         force = true;
       }
       if (canvas.style.display === 'none' && enabled) canvas.style.display = '';
-      drawCinema(cinema);
-      return;
-    }
-    if (wasCinema) {
+    } else if (wasCinema) {
       wasCinema = false;
       document.documentElement.classList.remove('liquify-cinema');
       rescan();
@@ -1724,6 +1728,10 @@
     for (i = 0; i < matched.length; i++) {
       var m = matched[i];
       if (!m.el.isConnected || m.hidden) { drop(m); continue; }
+      /* The app is still there behind full screen, and its panels would be
+       * drawn straight over the sheet. Only what full screen actually shows. */
+      if (cinema && !cinema.contains(m.el) &&
+          !m.el.closest('.Root__now-playing-bar, .Root__globalNav')) { drop(m); continue; }
       /* Read opacity every frame, not from the 400ms cache. Full screen fades
        * the top bar and the playbar out on their own timers; drawing from a
        * stale flag leaves the glass frame hanging there after its element has
@@ -1751,8 +1759,10 @@
 
     renderer.begin();
     drawn = 0;
+    if (cinema) drawCinema(cinema);
     for (i = 0; i < list.length; i++) {
       var it = list[i], mm = it.m, rr = it.r;
+      if (mm.el === cinema) continue;   // already drawn as the sheet
       if (!mm.el.hasAttribute('data-liquify-lg')) {
         /* If the float pass got here first, take its treatment off. The draw
          * pass wins: it knows this surface's backdrop, which is what the whole
