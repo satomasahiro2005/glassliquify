@@ -1266,6 +1266,27 @@
       /* The panes are containers, not panels. The theme frames them, and a
        * sheet drawn just inside one puts a second outline 20px from the first,
        * which is what reads as a doubled corner in the right pane. */
+      /* The patch behind the window buttons, sized in the pixels they are
+       * actually drawn in. The theme writes 135x64 CSS pixels and never
+       * revisits them, but the buttons are native: their size is fixed in
+       * device pixels, so in CSS pixels it has to shrink as the page is zoomed
+       * in. Dividing by the zoom is what the theme already does for the margin
+       * it reserves beside them - the same figure, applied to the patch.
+       *
+       * --zoom-level is set from Spotify's own zoom by syncZoomLevel; without
+       * it the fallback of 100 leaves this exactly as the theme had it. */
+      /* Width only. The buttons are native and Windows draws them at a fixed
+       * physical width, so in CSS pixels the patch has to shrink as the page
+       * is zoomed in - which is what the theme already does for the margin it
+       * reserves beside them, and what it forgets to do for the patch itself.
+       * The height is left alone: that one does follow the zoom.
+       *
+       * html. rather than a bare selector: the theme writes its own width with
+       * !important, and at equal specificity the last rule wins - which is not
+       * reliably ours. */
+      'html .Root__top-container::after{' +
+      'width:calc(135px / (var(--liquify-lg-zoom,100) / 100))!important;' +
+      'height:64px!important;}' +
       '.Root__right-sidebar,.Root__nav-bar{box-shadow:none!important;' +
       'border-color:transparent!important;}' +
       /* A floating card is refracted by an SVG lens instead of the shader, but
@@ -1602,6 +1623,30 @@
       return { x: d, y: d };
     }
     return { x: canvas.width / q.width, y: canvas.height / q.height };
+  }
+
+  /* Liquify sizes the strip it reserves for the window buttons with
+   * calc(135px / (var(--zoom-level, 100) / 100)) - 135 physical pixels, turned
+   * into CSS pixels by dividing by the zoom. The variable is never set by
+   * anything, so the fallback of 100 stands and the strip stays 135 CSS px at
+   * every zoom, while the buttons it is meant to sit behind do not: they are
+   * native, so their width in CSS pixels shrinks as the page grows.
+   *
+   * Spotify's zoom is a Chromium zoom level and the factor is 1.2 to the power
+   * of level/100. Setting the variable is what makes both the reserved margin
+   * and the brightness patch line up with the actual buttons. */
+  function syncZoomLevel() {
+    try {
+      var z = Spicetify.Platform.ZoomAPI.zoomEsperanto;
+      Promise.resolve(z.getZoomLevel()).then(function (r) {
+        var lvl = (r && r.zoomLevel != null) ? r.zoomLevel : 0;
+        var pct = Math.round(Math.pow(1.2, lvl / 100) * 100);
+        if (pct > 0) {
+          document.documentElement.style.setProperty('--zoom-level', String(pct));
+          document.documentElement.style.setProperty('--liquify-lg-zoom', String(pct));
+        }
+      }).catch(function () { /* older client: the fallback of 100 stands */ });
+    } catch (e) { /* no zoom API */ }
   }
 
   function markDirty() { dirty = true; }
@@ -2313,6 +2358,10 @@
      *
      * One rebuild, after the drag stops. */
     window.addEventListener('resize', scheduleBackdrop);
+    /* The zoom changes without the window moving, and it changes on resize
+     * too, so this rides the same event. */
+    window.addEventListener('resize', syncZoomLevel);
+    syncZoomLevel();
 
     rescan();
     collectScrollNodes();
