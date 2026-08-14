@@ -22,6 +22,11 @@
 上の「無改変」の5つは**一切編集していない**。変更は `patches/` に分けてあり、
 ビルド時に連結する（`FORK.md` 参照）。
 
+配布用の `theme/` に入る写しは、内容は同じだが完全に同一のバイト列ではない。
+`user.css` は BOM が落ち、`theme.js` と `color.ini` には先頭にライセンス表示の
+コメントが付く。Marketplace はマニフェストに書いたファイルしか配らないので、
+`LICENSE` や `NOTICE.md` がインストール先に届かないため。
+
 ## Backdrop（旧 AndroidLiquidGlass）
 
 - 出所: https://github.com/Kyant0/AndroidLiquidGlass
