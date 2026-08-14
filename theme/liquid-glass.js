@@ -1279,8 +1279,15 @@
        * Turning it off removes the seam, the colour step and the arithmetic in
        * one go. The theme already does this on Linux, where the buttons are
        * not drawn by the window at all. */
-      'html .Root__top-container::after{opacity:0!important;' +
-      'backdrop-filter:none!important;-webkit-backdrop-filter:none!important;}' +
+      /* The window darkens the strip it draws its buttons on - measured, the
+       * glass comes out at 0.36 of its value there - and the theme's patch is
+       * what cancels that. So the patch stays; what was wrong with it was its
+       * size, which it had to guess. The factor is a knob because the exact
+       * darkening is the window's business and may differ. */
+      'html .Root__top-container::after{' +
+      'backdrop-filter:brightness(var(--liquify-lg-caption,2.78))!important;' +
+      '-webkit-backdrop-filter:brightness(var(--liquify-lg-caption,2.78))!important;' +
+      'width:calc(135px / (var(--liquify-lg-zoom,100) / 100))!important;}' +
       '.Root__right-sidebar,.Root__nav-bar{box-shadow:none!important;' +
       'border-color:transparent!important;}' +
       /* A floating card is refracted by an SVG lens instead of the shader, but
