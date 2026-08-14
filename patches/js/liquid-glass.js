@@ -1445,6 +1445,7 @@
   }
 
   function rescan() {
+    var seen = new Set();
     /* Nothing runs while the toggle is off. The corner sweep kept going and
      * kept clipping the app's boxes to superellipses, so "off" was Liquify
      * with our corners on it - not the theme, and not a comparison worth
@@ -1461,6 +1462,12 @@
          * library rows, which are rows and not cards: a frame around each of
          * their covers turns the left pane into a grid of boxes. */
         if (t.notInside && el.closest(t.notInside)) continue;
+        /* Once per element, whatever it matched. Our own button matches both
+         * its own id and .main-actionButtons > button, so it was collected
+         * twice and drawn twice - two rims on the same corner, one over the
+         * other, which is the doubled outline in miniature. */
+        if (seen.has(el)) continue;
+        seen.add(el);
         var cs = getComputedStyle(el);
         /* A surface pinned inside a scroller has the list passing underneath
          * it, and the canvas only knows the wallpaper - it would blur a static
