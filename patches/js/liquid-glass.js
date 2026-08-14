@@ -1,5 +1,22 @@
 /* Liquid glass for Liquify, drawn in WebGL.
  *
+ * Copyright (c) 2026 nemut.ai
+ * Licensed under the GNU Affero General Public License v3.0. See LICENSE.
+ *
+ * The refraction, the seven-tap chromatic dispersion, the rim highlight, the
+ * rounded-rect SDF and the colour matrix in this file are a GLSL port of the
+ * AGSL runtime shaders in Backdrop:
+ *
+ *   https://github.com/Kyant0/AndroidLiquidGlass
+ *   Copyright 2025 Kyant
+ *   Licensed under the Apache License, Version 2.0.
+ *   A copy is in licenses/Apache-2.0-Backdrop.txt.
+ *
+ * Changes from that original: the corner is a superellipse rather than a
+ * circular arc, and the dispersion weighting can be switched to a constant.
+ * Both are noted in NOTICE.md, where the full list of ported functions is.
+ *
+ *
  * Spicetify extension. Draws a canvas between Liquify's album-art background
  * and the UI, and renders the glass for a fixed list of surfaces into it. The
  * surfaces themselves are made transparent so the canvas shows through.

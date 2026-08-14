@@ -21,7 +21,9 @@
 
 - 出所: https://github.com/Kyant0/AndroidLiquidGlass
 - 著作権: Copyright 2025 Kyant
-- ライセンス: **Apache-2.0**
+- ライセンス: **Apache-2.0**（本文の写しは `licenses/Apache-2.0-Backdrop.txt`。
+  Kyant のリポジトリの LICENSE をそのまま同梱している。NOTICE ファイルは
+  向こうに存在しない）
 
 `patches/js/liquid-glass.js` のフラグメントシェーダのうち、屈折・7タップの色収差・
 縁のハイライトの各関数は、同リポジトリの
@@ -75,7 +77,8 @@ Copyright NMWplays, AGPL-3.0. Its files (`user.css`, `theme.js`, `color.ini`,
 lives in `patches/` and is concatenated at build time.
 
 **Backdrop** — https://github.com/Kyant0/AndroidLiquidGlass — Copyright 2025
-Kyant, Apache-2.0. The refraction, seven-tap dispersion and rim highlight in
+Kyant, Apache-2.0; a verbatim copy of their LICENSE is in
+`licenses/Apache-2.0-Backdrop.txt`. The refraction, seven-tap dispersion and rim highlight in
 `patches/js/liquid-glass.js` are a GLSL port of its AGSL runtime shaders. The
 port is checked against the original pixel by pixel in `lab/verify.html`:
 72000 pixels, maximum channel difference 1/255.

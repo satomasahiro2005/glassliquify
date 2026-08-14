@@ -43,7 +43,10 @@ New-Item -ItemType Directory -Path $theme | Out-Null
 foreach ($f in @('user.css', 'color.ini', 'theme.js')) {
     Copy-Item (Join-Path $dist $f) (Join-Path $theme $f)
 }
-Copy-Item (Join-Path $root 'preview.png') (Join-Path $theme 'preview.png')
+# Our own screenshot, not upstream's. preview.png at the root is Liquify's and
+# shows Liquify; shipping it under this theme's name would be both a
+# misrepresentation and a redistribution of someone else's screenshot.
+Copy-Item (Join-Path $root 'docs\preview.png') (Join-Path $theme 'preview.png')
 
 # Generated data files first: the consumers read their globals at startup.
 $js = Get-ChildItem (Join-Path $root 'patches\js') -Filter '*.js' -File |
