@@ -73,7 +73,7 @@ $stamp = @"
  * PURPOSE. See the GNU Affero General Public License for more details.
  *
  *   Licence, source and full attribution:
- *   https://github.com/satomasahiro2005/glassliquify
+ *   https://github.com/satomasahiro2005/GlassLiquify
  *   Licence text: https://www.gnu.org/licenses/agpl-3.0.txt
  *
  * Parts of the glass shaders are ported from Backdrop (Copyright 2025 Kyant,
@@ -98,7 +98,7 @@ $upstreamStamp = @"
 %%CS%% GlassLiquify redistributes this file from NMWplays/Liquify unchanged.
 %%C%%
 %%C%% Liquify: Copyright NMWplays, GNU Affero General Public License v3.0.
-%%C%% This distribution: https://github.com/satomasahiro2005/glassliquify
+%%C%% This distribution: https://github.com/satomasahiro2005/GlassLiquify
 %%C%% Licence text: https://www.gnu.org/licenses/agpl-3.0.txt
 %%CE%%
 

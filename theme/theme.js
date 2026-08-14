@@ -1,7 +1,7 @@
 /* GlassLiquify redistributes this file from NMWplays/Liquify unchanged.
  *
  * Liquify: Copyright NMWplays, GNU Affero General Public License v3.0.
- * This distribution: https://github.com/satomasahiro2005/glassliquify
+ * This distribution: https://github.com/satomasahiro2005/GlassLiquify
  * Licence text: https://www.gnu.org/licenses/agpl-3.0.txt
  */
 "use strict";

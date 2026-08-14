@@ -6,11 +6,11 @@ refraction, dispersion and highlight shaders.
 
 **This fork**
 
-![after](https://raw.githubusercontent.com/satomasahiro2005/glassliquify/fork/docs/images/after.jpg)
+![after](https://raw.githubusercontent.com/satomasahiro2005/GlassLiquify/fork/docs/images/after.jpg)
 
 **Liquify as it ships**
 
-![before](https://raw.githubusercontent.com/satomasahiro2005/glassliquify/fork/docs/images/before.jpg)
+![before](https://raw.githubusercontent.com/satomasahiro2005/GlassLiquify/fork/docs/images/before.jpg)
 
 `Ctrl+Shift+G` switches between the two at runtime.
 
@@ -57,12 +57,12 @@ compared pixel by pixel.
 **Over 72,000 pixels: maximum channel difference 1/255, mean 0.0000278, and no
 pixel differs by more than 1.** That is inside 8-bit rounding.
 
-![verify](https://raw.githubusercontent.com/satomasahiro2005/glassliquify/fork/docs/images/24-verify.jpg)
+![verify](https://raw.githubusercontent.com/satomasahiro2005/GlassLiquify/fork/docs/images/24-verify.jpg)
 
 ## Installing
 
 ```powershell
-git clone https://github.com/satomasahiro2005/glassliquify
+git clone https://github.com/satomasahiro2005/GlassLiquify
 cd glassliquify
 .\deploy.ps1
 ```
@@ -76,7 +76,7 @@ so `spicetify config current_theme Liquify` puts everything back.
   presets, plus refraction width and amount, dispersion, corner shape,
   saturation, blur, rim strength and light angle
 
-See [FORK.md](https://github.com/satomasahiro2005/glassliquify/blob/fork/FORK.md) for how the fork is structured and [NOTICE.md](https://github.com/satomasahiro2005/glassliquify/blob/fork/NOTICE.md)
+See [FORK.md](https://github.com/satomasahiro2005/GlassLiquify/blob/fork/FORK.md) for how the fork is structured and [NOTICE.md](https://github.com/satomasahiro2005/GlassLiquify/blob/fork/NOTICE.md)
 for what came from where.
 
 ## Licence
@@ -91,12 +91,12 @@ Copyright (c) 2026 nemut.ai for this fork's own work.
 The refraction, dispersion and rim shaders are ported from
 [Backdrop](https://github.com/Kyant0/AndroidLiquidGlass) (Copyright 2025 Kyant),
 **Apache License 2.0** — a copy travels with the source at
-[`licenses/Apache-2.0-Backdrop.txt`](https://github.com/satomasahiro2005/glassliquify/blob/fork/licenses/Apache-2.0-Backdrop.txt).
+[`licenses/Apache-2.0-Backdrop.txt`](https://github.com/satomasahiro2005/GlassLiquify/blob/fork/licenses/Apache-2.0-Backdrop.txt).
 Apache-2.0 combines into AGPL-3.0 in that direction; the combined work is
 AGPL-3.0 and Kyant's terms continue to apply to their part.
 
 Which file came from where, and what was changed, is in
-[NOTICE.md](https://github.com/satomasahiro2005/glassliquify/blob/fork/NOTICE.md).
+[NOTICE.md](https://github.com/satomasahiro2005/GlassLiquify/blob/fork/NOTICE.md).
 
 ---
 ---

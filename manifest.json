@@ -1,7 +1,7 @@
 [
   {
     "name": "GlassLiquify",
-    "description": "Liquify with real liquid glass: a WebGL port of Backdrop's refraction, dispersion and rim shaders, drawn over the album art.",
+    "description": "A fork of Liquify with real liquid glass: a WebGL port of Backdrop's refraction, dispersion and rim shaders, drawn over the album art.",
     "preview": "theme/preview.png",
     "readme": "README.md",
     "usercss": "theme/user.css",
@@ -16,10 +16,6 @@
       {
         "name": "nemut.ai",
         "url": "https://github.com/satomasahiro2005"
-      },
-      {
-        "name": "NMWplays (original theme: Liquify)",
-        "url": "https://github.com/NMWplays"
       }
     ],
     "tags": [

@@ -11,7 +11,7 @@
  * PURPOSE. See the GNU Affero General Public License for more details.
  *
  *   Licence, source and full attribution:
- *   https://github.com/satomasahiro2005/glassliquify
+ *   https://github.com/satomasahiro2005/GlassLiquify
  *   Licence text: https://www.gnu.org/licenses/agpl-3.0.txt
  *
  * Parts of the glass shaders are ported from Backdrop (Copyright 2025 Kyant,
