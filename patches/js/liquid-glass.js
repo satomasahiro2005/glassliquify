@@ -1873,7 +1873,17 @@
     var W = Math.round(window.innerWidth * dpr);
     var H = Math.round(window.innerHeight * dpr);
     var resized = canvas.width !== W || canvas.height !== H;
-    if (resized) { canvas.width = W; canvas.height = H; }
+    if (resized) {
+      canvas.width = W; canvas.height = H;
+      /* The backdrop is built at the canvas size, so a canvas that changed
+       * size has a wallpaper that no longer fits it - the sampler clamps past
+       * the end of the texture and the last few hundred pixels come out as one
+       * flat colour. Ctrl and the wheel do this without the window moving:
+       * devicePixelRatio changes, the canvas follows, and nothing else notices.
+       * Rebuilding from here covers every way the size can change, rather than
+       * from the resize event alone. */
+      scheduleBackdrop();
+    }
 
     // collect first, so nothing is drawn when the layout has not moved
     var list = [];
@@ -2137,6 +2147,20 @@
    * is worth being strict here and retrying until an image really arrives. */
   var retry = null;
 
+  /* Debounced, and shared by everything that can invalidate the wallpaper:
+   * a window resize, a zoom, a device scale change. Rebuilding is two
+   * full-window canvases and two texture uploads, so it waits for the moving
+   * to stop. */
+  var backdropTimer = null;
+
+  function scheduleBackdrop() {
+    if (backdropTimer) clearTimeout(backdropTimer);
+    backdropTimer = setTimeout(function () {
+      backdropTimer = null;
+      refreshBackdrop();
+    }, 200);
+  }
+
   function refreshBackdrop() {
     /* A call that arrives while a rebuild is in flight is remembered, not
      * dropped. Dropping it is how the backdrop ended up built for a size the
@@ -2244,14 +2268,7 @@
      * it reads as a subtly wrong scale until the next track change.
      *
      * One rebuild, after the drag stops. */
-    var resizeTimer = null;
-    window.addEventListener('resize', function () {
-      if (resizeTimer) clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(function () {
-        resizeTimer = null;
-        refreshBackdrop();
-      }, 200);
-    });
+    window.addEventListener('resize', scheduleBackdrop);
 
     rescan();
     collectScrollNodes();

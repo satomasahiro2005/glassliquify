@@ -21,7 +21,7 @@
     'ガラス (Ctrl+Shift+G)': 'Glass (Ctrl+Shift+G)', 'Retina 表示': 'Retina scaling',
     'リセット': 'Reset', '既定に戻す': 'Restore defaults',
     '設定は次回起動時にも残ります。': 'Settings are kept between restarts.',
-    '閉じる': 'Close', 'この画面はすでに 2x です': 'This display is already 2x',
+    '閉じる': 'Close', '拡大率': 'Zoom',
   };
 
   /* Asked for when it is needed, not when this file loads: Spotify sets
@@ -177,32 +177,34 @@
 
   var current = null;
   var inputs = {};
-  var RETINA_KEY = 'liquify-lg-retina';
+  /* The retina button is gone. It was CSS zoom on the root, which is what
+   * Ctrl and the wheel already do properly - Spotify keeps that setting, it
+   * survives a restart, and it does not double a display that is already 2x.
+   * What is useful is being told where you are, so the row shows the factor
+   * instead of offering to change it.
+   *
+   * Spotify's own zoom is a Chromium zoom level: the factor is 1.2 to the
+   * power of level/100. Reading devicePixelRatio instead would fold in the
+   * display's own scale and answer 200% on a retina screen at 100% zoom. */
+  var ZOOM_STEP = 1.2;
 
-  function retinaOn() {
-    return localStorage.getItem(RETINA_KEY) === 'on';
+  function readZoom(then) {
+    try {
+      var z = Spicetify.Platform.ZoomAPI.zoomEsperanto;
+      Promise.resolve(z.getZoomLevel()).then(function (r) {
+        var lvl = (r && r.zoomLevel != null) ? r.zoomLevel : 0;
+        then(Math.round(Math.pow(ZOOM_STEP, lvl / 100) * 100));
+      }).catch(function () { then(null); });
+    } catch (e) { then(null); }
   }
 
-  /* Only where the display is not already one. This is CSS zoom, and on a
-   * screen that is genuinely 2x it doubles what is already doubled: the whole
-   * app goes off the edges and the control that would undo it goes with it.
-   * Asked for on a retina display, it does nothing and says so. */
-  function retinaUseful() {
-    return (window.devicePixelRatio || 1) < 1.5;
-  }
-
-  function applyRetina() {
-    document.documentElement.style.zoom = (retinaOn() && retinaUseful()) ? '2' : '';
-  }
-
-  /* Toggling this live leaves half the app measured at the old scale, so it is
-   * saved and the window is reloaded. A true device scale change needs
-   * --force-device-scale-factor at launch, which a panel inside the app cannot
-   * set; this is CSS zoom, applied once on load. */
-  function setRetina(on) {
-    try { localStorage.setItem(RETINA_KEY, on ? 'on' : 'off'); } catch (e) {}
-    location.reload();
-  }
+  /* Whatever the old toggle left behind, taken off once. */
+  try {
+    if (localStorage.getItem('liquify-lg-retina')) {
+      localStorage.removeItem('liquify-lg-retina');
+      document.documentElement.style.removeProperty('zoom');
+    }
+  } catch (e) { /* storage blocked */ }
 
   function syncInputs() {
     var d = window.liquifyLG.defaults;
@@ -322,28 +324,17 @@
       el('span', { text: t('ガラス (Ctrl+Shift+G)') }), toggle,
     ]));
 
-    /* Treat the display as Retina.
-     *
-     * The honest way is --force-device-scale-factor=2 at launch, but a panel
-     * cannot change a launch flag. CSS zoom on the root gets the same result
-     * here: getBoundingClientRect returns coordinates in the zoomed space and
-     * innerWidth stays put, so the canvas and the surfaces still share one
-     * coordinate system and none of the drawing maths changes. Checked in the
-     * app rather than assumed. */
-    var retina = el('button', { text: retinaOn() ? '2x' : '1x' });
-    if (!retinaUseful()) {
-      retina.disabled = true;
-      retina.title = t('この画面はすでに 2x です');
-      retina.style.opacity = '.4';
-      retina.style.cursor = 'default';
+    /* Read only. Ctrl and the wheel change it; this says where you are. */
+    var zoomOut = el('span', { text: '—' });
+    zoomOut.style.opacity = '.85';
+    zoomOut.style.fontVariantNumeric = 'tabular-nums';
+    function refreshZoom() {
+      readZoom(function (pct) { zoomOut.textContent = pct === null ? '—' : pct + '%'; });
     }
-    retina.addEventListener('click', function () {
-      var on = !retinaOn();
-      setRetina(on);
-      retina.textContent = on ? '2x' : '1x';
-    });
+    refreshZoom();
+    window.addEventListener('resize', refreshZoom, { passive: true });
     body.appendChild(el('div', { class: 'row' }, [
-      el('span', { text: t('Retina 表示') }), retina,
+      el('span', { text: t('拡大率') }), zoomOut,
     ]));
 
     var reset = el('button', { text: t('既定に戻す') });
