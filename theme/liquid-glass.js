@@ -1565,6 +1565,36 @@
   /* Idle frames must cost nothing. getBoundingClientRect on every matched
    * element forces layout, so it only runs when something could have moved:
    * a scroll, a resize, a rescan, or the slow safety tick. */
+  /* The viewport in device pixels, measured rather than multiplied out.
+   *
+   * innerWidth and innerHeight are rounded to whole CSS pixels, and at a zoom
+   * that is not a whole number the true size is not: measured at 207% the
+   * viewport was 1852.816 x 1019.483 CSS, which is 3842.0 x 2114.0 device
+   * pixels, while innerHeight * devicePixelRatio came out at 2113. The canvas
+   * was then a pixel short and stretched to fill the box it occupies, so
+   * everything drawn into it sat slightly off, worst at the far edge.
+   *
+   * visualViewport carries the fractional size. Where it is missing the old
+   * arithmetic is the fallback, which is exact at whole-number zoom. */
+  function viewportCss() {
+    var vv = window.visualViewport;
+    if (vv && vv.width && vv.height) return { w: vv.width, h: vv.height };
+    return { w: window.innerWidth, h: window.innerHeight };
+  }
+
+  /* Device pixels per CSS pixel, taken from the canvas itself. Once its
+   * backing store is set, that ratio is what the browser will use to put the
+   * drawing on screen, whatever devicePixelRatio says. Using dpr instead is an
+   * assumption that the rounding went the other way. */
+  function canvasScale() {
+    var q = canvas && canvas.getBoundingClientRect();
+    if (!q || !q.width || !q.height) {
+      var d = window.devicePixelRatio || 1;
+      return { x: d, y: d };
+    }
+    return { x: canvas.width / q.width, y: canvas.height / q.height };
+  }
+
   function markDirty() { dirty = true; }
 
   /* Rescanning is the expensive thing in this extension, not drawing. It runs
@@ -1869,9 +1899,10 @@
     /* Floaters come and go with a click, so this rides the same dirty flag the
      * draw pass does rather than waiting for the next rescan. */
     styleFloaters();
-    var dpr = window.devicePixelRatio || 1;
-    var W = Math.round(window.innerWidth * dpr);
-    var H = Math.round(window.innerHeight * dpr);
+    var dprRaw = window.devicePixelRatio || 1;
+    var vp = viewportCss();
+    var W = Math.round(vp.w * dprRaw);
+    var H = Math.round(vp.h * dprRaw);
     var resized = canvas.width !== W || canvas.height !== H;
     if (resized) {
       canvas.width = W; canvas.height = H;
@@ -1884,6 +1915,10 @@
        * from the resize event alone. */
       scheduleBackdrop();
     }
+    /* Whatever the canvas ended up as, that is the ratio to draw with. */
+    var cs2 = canvasScale();
+    var dpr = cs2.x;
+    var dprY = cs2.y;
 
     // collect first, so nothing is drawn when the layout has not moved
     var list = [];
@@ -1996,7 +2031,7 @@
       // a full-size lens on a small chip looks wrong; scale it to what fits
       var scale = Math.min(1, minDim / 96);
       var rect = {
-        x: rr.left * dpr, y: rr.top * dpr, w: rr.width * dpr, h: rr.height * dpr,
+        x: rr.left * dpr, y: rr.top * dprY, w: rr.width * dpr, h: rr.height * dprY,
         r: radius * dpr
       };
 
@@ -2038,11 +2073,11 @@
 
       // glass must not spill out of the box that scrolls it
       renderer.scissor(it.c ? {
-        x: it.c.left * dpr, y: it.c.top * dpr, w: it.c.width * dpr, h: it.c.height * dpr
+        x: it.c.left * dpr, y: it.c.top * dprY, w: it.c.width * dpr, h: it.c.height * dprY
       } : null);
       renderer.roundedClip(roundHost ? {
-        x: roundHost.left * dpr, y: roundHost.top * dpr,
-        w: roundHost.width * dpr, h: roundHost.height * dpr, r: radius * dpr
+        x: roundHost.left * dpr, y: roundHost.top * dprY,
+        w: roundHost.width * dpr, h: roundHost.height * dprY, r: radius * dpr
       } : null);
 
       var opts = Object.assign({}, DEFAULTS, {
