@@ -1948,8 +1948,25 @@
        * This only clips content now - the element's own fill, border and
        * shadow are already stripped - so the polygon is not drawn next to the
        * rim and cannot double it. */
-      var clipKey = (rr.width | 0) + 'x' + (rr.height | 0) + 'r' + radius.toFixed(1) +
-                    'n' + DEFAULTS.superness;
+      /* Only where the element already contains its own content. A box with
+       * overflow visible is built to let its children out - the Marketplace's
+       * sort bar is 60px tall and its dropdown opens below it - and clipping
+       * that box to a squircle cuts the menu off inside the frame. Nothing is
+       * lost by leaving those alone: they were not containing anything, so
+       * there is no overflow for the corner to tidy. */
+      var ocs = nodeStyle(mm.el);
+      var clipsOwn = ocs.boundsByStyle && ocs.clips;
+      var clipKey = clipsOwn
+        ? (rr.width | 0) + 'x' + (rr.height | 0) + 'r' + radius.toFixed(1) +
+          'n' + DEFAULTS.superness
+        : 'none';
+      if (!clipsOwn) {
+        if (mm.el.__lgRadius !== 'none') {
+          mm.el.__lgRadius = 'none';
+          mm.el.style.removeProperty('clip-path');
+          mm.el.style.setProperty('border-radius', radius + 'px', 'important');
+        }
+      } else
       /* The inline style is checked, not just the cached key. Spotify rebuilds
        * a tile's style attribute on its own - a hover, a re-render - and takes
        * the clip with it, which is why some covers were cut to the corner and
