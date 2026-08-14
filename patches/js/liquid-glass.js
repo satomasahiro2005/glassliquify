@@ -1266,27 +1266,21 @@
       /* The panes are containers, not panels. The theme frames them, and a
        * sheet drawn just inside one puts a second outline 20px from the first,
        * which is what reads as a doubled corner in the right pane. */
-      /* The patch behind the window buttons, sized in the pixels they are
-       * actually drawn in. The theme writes 135x64 CSS pixels and never
-       * revisits them, but the buttons are native: their size is fixed in
-       * device pixels, so in CSS pixels it has to shrink as the page is zoomed
-       * in. Dividing by the zoom is what the theme already does for the margin
-       * it reserves beside them - the same figure, applied to the patch.
+      /* No patch behind the window buttons.
        *
-       * --zoom-level is set from Spotify's own zoom by syncZoomLevel; without
-       * it the fallback of 100 leaves this exactly as the theme had it. */
-      /* Width only. The buttons are native and Windows draws them at a fixed
-       * physical width, so in CSS pixels the patch has to shrink as the page
-       * is zoomed in - which is what the theme already does for the margin it
-       * reserves beside them, and what it forgets to do for the patch itself.
-       * The height is left alone: that one does follow the zoom.
+       * The theme brightens a 135x64 rectangle there with backdrop-filter so
+       * the native buttons stand out against its own dark glass, and then has
+       * to keep that rectangle the same size as buttons it cannot measure -
+       * a figure in physical pixels, a page that zooms, and a variable nothing
+       * sets. Every part of that is a guess about someone else's chrome.
        *
-       * html. rather than a bare selector: the theme writes its own width with
-       * !important, and at equal specificity the last rule wins - which is not
-       * reliably ours. */
-      'html .Root__top-container::after{' +
-      'width:calc(135px / (var(--liquify-lg-zoom,100) / 100))!important;' +
-      'height:64px!important;}' +
+       * The top bar is one sheet of glass across its whole width now, and the
+       * buttons are legible on it, so the rectangle has nothing left to do.
+       * Turning it off removes the seam, the colour step and the arithmetic in
+       * one go. The theme already does this on Linux, where the buttons are
+       * not drawn by the window at all. */
+      'html .Root__top-container::after{opacity:0!important;' +
+      'backdrop-filter:none!important;-webkit-backdrop-filter:none!important;}' +
       '.Root__right-sidebar,.Root__nav-bar{box-shadow:none!important;' +
       'border-color:transparent!important;}' +
       /* A floating card is refracted by an SVG lens instead of the shader, but
