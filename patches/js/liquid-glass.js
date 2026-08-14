@@ -248,6 +248,7 @@
     'uniform float uHlWidth;',
     'uniform float uHlFloor;',
     'uniform float uOpacity;',
+    'uniform vec4 uClip;',   // x, y, x2, y2 in device px
     '',
     'float radiusAt(vec2 coord, vec4 radii) {',
     '  if (coord.x >= 0.0) { if (coord.y <= 0.0) return radii.y; else return radii.z; }',
@@ -346,6 +347,14 @@
     '  // the frame of the panel and not just a glint on the lit sides',
     '  float intensity = mix(uHlFloor, 1.0, pow(abs(dot(g, lightDir)), uHlFalloff));',
     '  float band = 1.0 - smoothstep(uHlWidth - 1.0, uHlWidth + 1.0, -sd);',
+    /* The rim fades out where the surface runs into whatever clips it.
+     * Scissoring alone chopped the frame off square: a card half past the end
+     * of its shelf, or a panel crossing the bottom of a pane, came back with a
+     * bright edge sliced flat, which reads as broken rather than as continuing
+     * out of view. Fading it says the panel goes on. */
+    '  float dc = min(min(vPix.x - uClip.x, uClip.z - vPix.x),',
+    '                 min(vPix.y - uClip.y, uClip.w - vPix.y));',
+    '  band *= smoothstep(0.0, 16.0, dc);',
     '  color.rgb += uHighlight.rgb * (intensity * band * uHighlight.a);',
     '  float cov = clamp(-sd, 0.0, 1.0);',
     '  cov *= uOpacity;',
@@ -415,7 +424,7 @@
     this.u = {};
     ['uCanvas','uRect','uRadii','uSuperness','uRefractionHeight','uRefractionAmount',
      'uDepthEffect','uDispersion','uDispersionCorner','uBrightness','uContrast','uSaturation',
-     'uSurface','uHighlight','uHlAngle','uHlFalloff','uHlWidth','uHlFloor','uOpacity','uBackdrop',
+     'uSurface','uHighlight','uHlAngle','uHlFalloff','uHlWidth','uHlFloor','uOpacity','uClip','uBackdrop',
      'uBackdropBlur','uBlurMix'
     ].forEach(function (n) { this.u[n] = gl.getUniformLocation(this.prog, n); }, this);
     this.uq = {
@@ -545,6 +554,7 @@
    * That is what left the shortcut tiles and the shelf cards with no glass. */
   Renderer.prototype.scissor = function (box) {
     var gl = this.gl;
+    this.clipBox = box || null;
     if (!box) { gl.disable(gl.SCISSOR_TEST); return; }
     gl.enable(gl.SCISSOR_TEST);
     gl.scissor(Math.max(0, Math.floor(box.x)),
@@ -566,6 +576,9 @@
   Renderer.prototype.draw = function (rect, o) {
     var gl = this.gl, u = this.u;
     gl.uniform4f(u.uRect, rect.x, rect.y, rect.w, rect.h);
+    var cb = this.clipBox;
+    if (cb) gl.uniform4f(u.uClip, cb.x, cb.y, cb.x + cb.w, cb.y + cb.h);
+    else gl.uniform4f(u.uClip, -1e6, -1e6, 1e6, 1e6);
     gl.uniform4f(u.uRadii, rect.r, rect.r, rect.r, rect.r);
     gl.uniform1f(u.uSuperness, o.superness);
     gl.uniform1f(u.uRefractionHeight, Math.max(0.01, o.height));
