@@ -1285,8 +1285,8 @@
        * size, which it had to guess. The factor is a knob because the exact
        * darkening is the window's business and may differ. */
       'html .Root__top-container::after{' +
-      'backdrop-filter:brightness(var(--liquify-lg-caption,2.78))!important;' +
-      '-webkit-backdrop-filter:brightness(var(--liquify-lg-caption,2.78))!important;' +
+      'backdrop-filter:brightness(var(--liquify-lg-caption,2.13))!important;' +
+      '-webkit-backdrop-filter:brightness(var(--liquify-lg-caption,2.13))!important;' +
       'width:calc(135px / (var(--liquify-lg-zoom,100) / 100))!important;}' +
       '.Root__right-sidebar,.Root__nav-bar{box-shadow:none!important;' +
       'border-color:transparent!important;}' +
