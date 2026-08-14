@@ -1235,6 +1235,19 @@
        * under it. Nothing there is reachable while the cover is up, so take the
        * whole column out for as long as it lasts. */
       'html.liquify-cinema .Root__right-sidebar{display:none!important;}' +
+      /* Full screen collapses the banner and nav rows to 20px each while the
+       * nav is still 64px tall, so it overflows its own row by 24px and lands
+       * on the content underneath. Windowed cinema lays out correctly, so this
+       * is only for the real thing: give the nav row its height and let the
+       * view take what is left. */
+      'html.liquify-lg-fullscreen .Root__top-container{' +
+      'grid-template-rows:0 var(--liquify-nav-h,64px) 1fr auto!important;}' +
+      /* And the view stops pulling itself up under the bar. The negative
+       * margin is there for a full screen whose bar is hidden; with the bar
+       * on screen it just puts the cover behind it. What replaces it is
+       * measured, so the gap above the panel matches the gap beside it. */
+      'html.liquify-lg-fullscreen .Root__cinema-view{' +
+      'margin-top:var(--liquify-cinema-mt,0px)!important;}' +
       /* The bars fade on Spotify's timer, but the theme's border on them does
        * not, so an empty frame hangs there after the contents have gone. */
       'html.liquify-cinema .Root__now-playing-bar,html.liquify-cinema .Root__globalNav{' +
@@ -1465,6 +1478,9 @@
   var sig = '';
   var dirty = true;
   var wasCinema = false;
+  var lastNavH = 0;
+  var lastCinemaMt = null;
+  var wasFullscreen = false;
 
   /* Idle frames must cost nothing. getBoundingClientRect on every matched
    * element forces layout, so it only runs when something could have moved:
@@ -1697,6 +1713,25 @@
      * So the sheet is drawn first and the normal pass runs on top of it,
      * restricted to what is actually inside full screen. */
     var cinema = cinemaPanel();
+
+    /* Real full screen, not just the cinema panel in a window - the two lay
+     * out differently and only one of them is wrong. Decided here, every
+     * frame, because deciding it inside the full screen branch meant nothing
+     * turned it off again: leaving full screen does not always clear
+     * document.fullscreenElement, and the class was still setting the grid
+     * rows for the ordinary view. */
+    var fullscreen = !!(cinema && document.fullscreenElement);
+    if (fullscreen !== wasFullscreen) {
+      wasFullscreen = fullscreen;
+      document.documentElement.classList.toggle('liquify-lg-fullscreen', fullscreen);
+      if (!fullscreen) {
+        lastNavH = 0;
+        lastCinemaMt = null;
+        document.documentElement.style.removeProperty('--liquify-nav-h');
+        document.documentElement.style.removeProperty('--liquify-cinema-mt');
+      }
+    }
+
     if (cinema !== null) {
       if (!wasCinema) {
         wasCinema = true;
@@ -1709,6 +1744,33 @@
         });
         rescan();
         force = true;
+      }
+      /* The nav spans the banner row and its own, so the two together have to
+       * add up to its real height. Measured rather than assumed - `auto`
+       * resolves to the row's content, not to an item that overflows it. */
+      if (fullscreen) {
+        var navEl = document.querySelector('.Root__globalNav');
+        if (navEl) {
+          var nh = Math.round(navEl.getBoundingClientRect().height);
+          if (nh > 0 && nh !== lastNavH) {
+            lastNavH = nh;
+            document.documentElement.style.setProperty('--liquify-nav-h', nh + 'px');
+            /* Re-measured whenever the bar changes size: with the pull-up
+             * gone the panel sits wherever the container's own spacing puts
+             * it, which is not the same as its side inset. One correction,
+             * from what the two actually measure. */
+            lastCinemaMt = null;
+          }
+          if (lastCinemaMt === null) {
+            var host = document.querySelector('.Root__top-container');
+            var cq = cinema.getBoundingClientRect(), hq = host.getBoundingClientRect();
+            var side = Math.round(cq.left - hq.left);
+            var above = Math.round(cq.top - navEl.getBoundingClientRect().bottom);
+            var mt = (parseFloat(getComputedStyle(cinema).marginTop) || 0) + (side - above);
+            lastCinemaMt = Math.round(mt);
+            document.documentElement.style.setProperty('--liquify-cinema-mt', lastCinemaMt + 'px');
+          }
+        }
       }
       if (canvas.style.display === 'none' && enabled) canvas.style.display = '';
     } else if (wasCinema) {
