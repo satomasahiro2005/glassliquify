@@ -564,6 +564,8 @@
    * is why the columns and the sections looked right, but a section clipping
    * its own children landed hundreds of pixels away and cut them out entirely.
    * That is what left the shortcut tiles and the shelf cards with no glass. */
+  Renderer.prototype.roundedClip = function (box) { this.roundBox = box || null; };
+
   Renderer.prototype.scissor = function (box) {
     var gl = this.gl;
     this.clipBox = box || null;
@@ -588,10 +590,18 @@
   Renderer.prototype.draw = function (rect, o) {
     var gl = this.gl, u = this.u;
     gl.uniform4f(u.uRect, rect.x, rect.y, rect.w, rect.h);
-    var cb = this.clipBox;
-    if (cb) {
-      gl.uniform4f(u.uClip, cb.x, cb.y, cb.x + cb.w, cb.y + cb.h);
-      gl.uniform1f(u.uClipRadius, cb.r || 0);
+    /* Two clips, and they are not the same box.
+     *
+     * gl.scissor takes the intersection of everything that bounds this surface
+     * - scrollers included - and that is a rectangle. The rounded one is the
+     * innermost container that is itself one of ours, with its own rect and
+     * its own corner. Applying the radius to the intersection instead would
+     * put a curve on corners that are not the container's: it only came out
+     * right where the two happened to be the same box. */
+    var rb = this.roundBox || this.clipBox;
+    if (rb) {
+      gl.uniform4f(u.uClip, rb.x, rb.y, rb.x + rb.w, rb.y + rb.h);
+      gl.uniform1f(u.uClipRadius, rb.r || 0);
     } else {
       gl.uniform4f(u.uClip, -1e6, -1e6, 1e6, 1e6);
       gl.uniform1f(u.uClipRadius, 0);
@@ -1624,6 +1634,7 @@
     radius = Math.min(radius, Math.min(r.width, r.height) / 2);
 
     renderer.scissor(null);
+    renderer.roundedClip(null);
     var rect = {
       x: r.left * dpr, y: r.top * dpr, w: r.width * dpr, h: r.height * dpr,
       r: radius * dpr
@@ -1945,7 +1956,7 @@
        * inside another panel has a rim of its own, and without this it is drawn
        * past the parent's edge - the frame pokes out through its container. */
       var clipBox = it.c;
-      var clipRounded = false;
+      var roundHost = null;
       var ancestors = [];
       for (var a = mm.el.parentElement; a; a = a.parentElement) {
         ancestors.push(a);
@@ -1959,8 +1970,11 @@
         var bounds = nodeStyle(anc).boundsByStyle ||
                      anc.hasAttribute('data-liquify-lg');
         if (!bounds) continue;
-        if (anc.hasAttribute('data-liquify-lg')) clipRounded = true;
         var q = anc.getBoundingClientRect();
+        /* Innermost wins: ancestors are walked outward, so the first one of
+         * ours is the box this surface actually sits in. */
+        if (!roundHost && anc.hasAttribute('data-liquify-lg') &&
+            q.width >= 4 && q.height >= 4) roundHost = q;
         if (q.width < 4 || q.height < 4) continue;
         clipBox = clipBox ? {
           left: Math.max(clipBox.left, q.left), top: Math.max(clipBox.top, q.top),
@@ -1976,10 +1990,11 @@
 
       // glass must not spill out of the box that scrolls it
       renderer.scissor(it.c ? {
-        x: it.c.left * dpr, y: it.c.top * dpr, w: it.c.width * dpr, h: it.c.height * dpr,
-        /* The radius travels with the box: if what clips this surface is one
-         * of ours it has the uniform corner, and the cut has to follow it. */
-        r: (clipRounded ? radius : 0) * dpr
+        x: it.c.left * dpr, y: it.c.top * dpr, w: it.c.width * dpr, h: it.c.height * dpr
+      } : null);
+      renderer.roundedClip(roundHost ? {
+        x: roundHost.left * dpr, y: roundHost.top * dpr,
+        w: roundHost.width * dpr, h: roundHost.height * dpr, r: radius * dpr
       } : null);
 
       var opts = Object.assign({}, DEFAULTS, {
@@ -2002,6 +2017,7 @@
       renderer.commit(rect, DEFAULTS.amount * dpr + 2);
     }
     renderer.scissor(null);
+    renderer.roundedClip(null);
     renderer.end();
     opCache = null;
     styleMemo = null;
