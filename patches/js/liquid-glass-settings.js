@@ -60,27 +60,46 @@
     'border-radius:17px;transition:transform .28s cubic-bezier(.3,2.25,.32,1)!important;}' +
     '#liquify-lg-btn:hover{color:var(--text-base);transform:scale(1.05);}' +
     '#liquify-lg-btn svg{width:18px;height:18px;display:block;}' +
-    '#liquify-lg-panel{position:fixed;right:18px;top:64px;z-index:99999;width:286px;' +
-    'padding:14px 16px;border-radius:16px;border:1px solid rgba(255,255,255,.14);' +
-    'background:rgba(18,18,22,.94);backdrop-filter:blur(20px);color:#fff;' +
-    'font:12px/1.5 ui-sans-serif,system-ui,"Segoe UI",sans-serif;' +
-    'max-height:70vh;overflow:auto;box-shadow:0 18px 50px rgba(0,0,0,.5);}' +
-    '#liquify-lg-panel[hidden]{display:none;}' +
-    '#liquify-lg-panel h3{margin:0 0 10px;font-size:11px;letter-spacing:.1em;opacity:.55;' +
-    'text-transform:uppercase;font-weight:600;}' +
-    '#liquify-lg-panel .presets{display:flex;gap:6px;margin-bottom:12px;}' +
-    '#liquify-lg-panel .presets button{flex:1;padding:6px 0;border-radius:9px;cursor:pointer;' +
+    /* A modal, centred, with the body doing the scrolling.
+     *
+     * It used to be pinned to the top right corner at a fixed size, which put
+     * it over the controls it sits beside and gave the sliders nowhere to go
+     * once there were more than a handful. Liquify's own settings are a
+     * centred sheet; this one matches, so the pair reads as one thing. */
+    '#liquify-lg-scrim{position:fixed;inset:0;z-index:99998;display:flex;' +
+    'align-items:center;justify-content:center;background:rgba(0,0,0,.45);' +
+    'backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);}' +
+    '#liquify-lg-scrim[hidden]{display:none;}' +
+    '#liquify-lg-panel{width:min(420px,calc(100vw - 64px));max-height:min(680px,80vh);' +
+    'display:flex;flex-direction:column;border-radius:20px;' +
+    'border:1px solid rgba(255,255,255,.14);background:rgba(18,18,22,.94);' +
+    'backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);color:#fff;' +
+    'font:13px/1.6 ui-sans-serif,system-ui,"Segoe UI",sans-serif;' +
+    'box-shadow:0 24px 70px rgba(0,0,0,.55);overflow:hidden;}' +
+    '#liquify-lg-panel .head{display:flex;align-items:center;justify-content:space-between;' +
+    'padding:16px 20px 12px;border-bottom:1px solid rgba(255,255,255,.08);flex:0 0 auto;}' +
+    '#liquify-lg-panel .head h3{margin:0;font-size:14px;letter-spacing:.02em;' +
+    'font-weight:600;opacity:.9;text-transform:none;}' +
+    '#liquify-lg-panel .head .x{width:30px;height:30px;border-radius:10px;cursor:pointer;' +
+    'border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#fff;' +
+    'font:inherit;line-height:1;}' +
+    /* the only thing that scrolls, so the title and the footer stay put */
+    '#liquify-lg-panel .body{overflow-y:auto;overscroll-behavior:contain;' +
+    'padding:14px 20px 18px;flex:1 1 auto;min-height:0;}' +
+    '#liquify-lg-panel .presets{display:flex;gap:8px;margin-bottom:14px;}' +
+    '#liquify-lg-panel .presets button{flex:1;padding:8px 0;border-radius:10px;cursor:pointer;' +
     'border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#fff;font:inherit;}' +
     '#liquify-lg-panel .presets button.on{background:rgba(255,255,255,.9);color:#111;border-color:transparent;}' +
-    '#liquify-lg-panel label{display:flex;align-items:center;gap:8px;margin:6px 0;}' +
-    '#liquify-lg-panel label>span{flex:0 0 72px;opacity:.75;}' +
+    '#liquify-lg-panel label{display:flex;align-items:center;gap:10px;margin:8px 0;}' +
+    '#liquify-lg-panel label>span{flex:0 0 84px;opacity:.75;}' +
     '#liquify-lg-panel input[type=range]{flex:1;min-width:0;accent-color:#fff;}' +
-    '#liquify-lg-panel output{flex:0 0 40px;text-align:right;font-variant-numeric:tabular-nums;opacity:.85;}' +
+    '#liquify-lg-panel output{flex:0 0 46px;text-align:right;font-variant-numeric:tabular-nums;opacity:.85;}' +
     '#liquify-lg-panel .row{display:flex;align-items:center;justify-content:space-between;' +
-    'padding:8px 0;border-top:1px solid rgba(255,255,255,.1);margin-top:10px;}' +
-    '#liquify-lg-panel .row button{padding:5px 12px;border-radius:9px;cursor:pointer;' +
+    'padding:10px 0;border-top:1px solid rgba(255,255,255,.1);margin-top:12px;}' +
+    '#liquify-lg-panel .row button{padding:6px 14px;border-radius:10px;cursor:pointer;' +
     'border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#fff;font:inherit;}' +
-    '#liquify-lg-panel .hint{opacity:.45;font-size:11px;margin-top:8px;}';
+    '#liquify-lg-panel .row button[disabled]{cursor:default;}' +
+    '#liquify-lg-panel .hint{opacity:.45;font-size:12px;margin-top:10px;}';
 
   function el(tag, attrs, kids) {
     var n = document.createElement(tag);
@@ -225,10 +244,13 @@
       presets.appendChild(b);
     });
 
-    var panel = el('div', { id: 'liquify-lg-panel', hidden: 'hidden' }, [
-      el('h3', { text: 'Liquid Glass' }),
-      presets,
+    var closeBtn = el('button', { class: 'x', text: '×', title: '閉じる' });
+    var body = el('div', { class: 'body' }, [presets]);
+    var panel = el('div', { id: 'liquify-lg-panel' }, [
+      el('div', { class: 'head' }, [el('h3', { text: 'Liquid Glass' }), closeBtn]),
+      body,
     ]);
+    var scrim = el('div', { id: 'liquify-lg-scrim', hidden: 'hidden' }, [panel]);
 
     SLIDERS.forEach(function (s) {
       var input = el('input', { type: 'range', min: s.min, max: s.max, step: s.step });
@@ -252,14 +274,14 @@
         save();
       });
       inputs[s.k] = { input: input, out: out };
-      panel.appendChild(el('label', {}, [el('span', { text: s.label }), input, out]));
+      body.appendChild(el('label', {}, [el('span', { text: s.label }), input, out]));
     });
 
     var toggle = el('button', { text: window.liquifyLG.enabled ? 'ON' : 'OFF' });
     toggle.addEventListener('click', function () {
       toggle.textContent = window.liquifyLG.toggle() ? 'ON' : 'OFF';
     });
-    panel.appendChild(el('div', { class: 'row' }, [
+    body.appendChild(el('div', { class: 'row' }, [
       el('span', { text: 'ガラス (Ctrl+Shift+G)' }), toggle,
     ]));
 
@@ -283,23 +305,30 @@
       setRetina(on);
       retina.textContent = on ? '2x' : '1x';
     });
-    panel.appendChild(el('div', { class: 'row' }, [
+    body.appendChild(el('div', { class: 'row' }, [
       el('span', { text: 'Retina 表示' }), retina,
     ]));
 
     var reset = el('button', { text: '既定に戻す' });
     reset.addEventListener('click', function () { applyPreset('clear'); });
-    panel.appendChild(el('div', { class: 'row' }, [
+    body.appendChild(el('div', { class: 'row' }, [
       el('span', { text: 'リセット' }), reset,
     ]));
 
-    panel.appendChild(el('div', { class: 'hint', text: '設定は次回起動時にも残ります。' }));
-    document.body.appendChild(panel);
+    body.appendChild(el('div', { class: 'hint', text: '設定は次回起動時にも残ります。' }));
+    document.body.appendChild(scrim);
 
-    btn.addEventListener('click', function () {
-      panel.hidden = !panel.hidden;
-      if (!panel.hidden) syncInputs();
-    });
+    function open(on) {
+      scrim.hidden = !on;
+      if (on) syncInputs();
+    }
+    btn.addEventListener('click', function () { open(scrim.hidden); });
+    closeBtn.addEventListener('click', function () { open(false); });
+    /* Clicking the sheet itself must not close it - only the space around. */
+    scrim.addEventListener('mousedown', function (e) { if (e.target === scrim) open(false); });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !scrim.hidden) { open(false); e.stopPropagation(); }
+    }, true);
 
     applyRetina();
     current = restore() || 'clear';
