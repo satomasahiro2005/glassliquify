@@ -1349,8 +1349,16 @@
       'html.liquify-lg-fullscreen .Root__cinema-view{' +
       'margin-top:var(--liquify-cinema-mt,0px)!important;}' +
       /* The bars fade on Spotify's timer, but the theme's border on them does
-       * not, so an empty frame hangs there after the contents have gone. */
+       * not, so an empty frame hangs there after the contents have gone.
+       *
+       * Its lens goes with the border. Ambient mode fades what is inside the
+       * playbar and leaves the bar itself at full opacity, so the theme's
+       * backdrop-filter went on refracting the panel that had just covered it:
+       * a blurred, chromatically fringed band across the bottom of the cover
+       * with nothing in it. Ours is the only glass in here, and where we do
+       * not draw there is to be none. */
       'html.liquify-cinema .Root__now-playing-bar,html.liquify-cinema .Root__globalNav{' +
+      'backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
       'border-color:transparent!important;box-shadow:none!important;background:none!important;}';
     document.head.appendChild(st);
   }
@@ -1591,6 +1599,7 @@
   var wasCinema = false;
   var lastNavH = 0;
   var lastCinemaMt = null;
+  var lastCinemaHidden = false;
   var wasFullscreen = false;
 
   /* Idle frames must cost nothing. getBoundingClientRect on every matched
@@ -1856,6 +1865,30 @@
     return o;
   }
 
+  /* Ambient cinema fades what is inside the playbar, not the playbar.
+   *
+   * After a few seconds without the mouse, Spotify puts the fade on
+   * .main-nowPlayingBar-container and grows the panel down across the row -
+   * the .Root__now-playing-bar the theme draws glass on keeps opacity 1 for as
+   * long as the mode lasts. So the surface said "visible" while the screen
+   * showed nothing of it, and the frame was left on the canvas, over the panel
+   * that had just covered it. The nav fades itself, which is why this is the
+   * one surface that has to be asked about its contents instead.
+   *
+   * The children are asked rather than the whole subtree, and the brightest
+   * one wins: a bar with a hidden connect strip in it is still on screen. */
+  function contentOpacity(el) {
+    var kids = el.children;
+    if (!kids.length) return 1;
+    var best = 0;
+    for (var i = 0; i < kids.length; i++) {
+      var o = effectiveOpacity(kids[i]);
+      if (o > best) best = o;
+      if (best > 0.98) break;
+    }
+    return best;
+  }
+
   /* Full screen fills the window with Spotify's own layout. Drawing the usual
    * set on top of it covered everything; drawing nothing left it plain. What it
    * wants is one sheet of glass: the cinema panel itself, and nothing else. */
@@ -1893,6 +1926,7 @@
       if (!fullscreen) {
         lastNavH = 0;
         lastCinemaMt = null;
+        lastCinemaHidden = false;
         document.documentElement.style.removeProperty('--liquify-nav-h');
         document.documentElement.style.removeProperty('--liquify-cinema-mt');
       }
@@ -1927,11 +1961,27 @@
              * from what the two actually measure. */
             lastCinemaMt = null;
           }
+          /* With the controls away the bar is not there to sit under, and
+           * Spotify's own rule pulls the panel up over the row it left. Ours
+           * replaces that rule outright, so the row stayed reserved and full
+           * screen kept a bare band across the top for as long as the mouse
+           * was still. Same measurement, one different reference: the panel
+           * goes under the bar while the bar is up, and under the top of the
+           * window once it has gone. */
+          var hidden = cinema.classList.contains('Root__cinema-view--controls-hidden');
+          if (hidden !== lastCinemaHidden) {
+            lastCinemaHidden = hidden;
+            lastCinemaMt = null;
+          }
           if (lastCinemaMt === null) {
             var host = document.querySelector('.Root__top-container');
             var cq = cinema.getBoundingClientRect(), hq = host.getBoundingClientRect();
             var side = Math.round(cq.left - hq.left);
-            var above = Math.round(cq.top - navEl.getBoundingClientRect().bottom);
+            /* Read in the same frame as the rect, so a margin still animating
+             * cancels out: rect.top minus the margin is where the panel would
+             * sit without one, and that does not move. */
+            var top0 = hidden ? hq.top : navEl.getBoundingClientRect().bottom;
+            var above = Math.round(cq.top - top0);
             var mt = (parseFloat(getComputedStyle(cinema).marginTop) || 0) + (side - above);
             lastCinemaMt = Math.round(mt);
             document.documentElement.style.setProperty('--liquify-cinema-mt', lastCinemaMt + 'px');
@@ -1991,6 +2041,12 @@
        * stale flag leaves the glass frame hanging there after its element has
        * gone, and the two bars drop at different moments. */
       var op = effectiveOpacity(m.el);
+      /* The playbar is the one whose contents fade under it - see
+       * contentOpacity. Only in cinema, and only for that surface: every other
+       * panel on screen is entitled to have faded children. */
+      if (op > 0.02 && cinema && m.el.classList.contains('Root__now-playing-bar')) {
+        op = Math.min(op, contentOpacity(m.el));
+      }
       if (!(op > 0.02)) { drop(m); continue; }
       var r = m.el.getBoundingClientRect();
       if (Math.max(r.width, r.height) <= 64 && contentIsHidden(m.el)) { drop(m); continue; }
