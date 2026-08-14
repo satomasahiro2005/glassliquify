@@ -1,5 +1,7 @@
 # [GlassLiquify](https://github.com/satomasahiro2005/GlassLiquify)
 
+![preview](https://raw.githubusercontent.com/satomasahiro2005/GlassLiquify/fork/docs/preview.png)
+
 A fork of [Liquify](https://github.com/NMWplays/Liquify) that replaces the
 theme's glass with a WebGL port of [Backdrop](https://github.com/Kyant0/AndroidLiquidGlass)'s
 refraction, dispersion and highlight shaders.
