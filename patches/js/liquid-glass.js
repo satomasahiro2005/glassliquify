@@ -73,14 +73,17 @@
       TARGETS.push({ selector: sel, radius: 20, ca: true, notInside: '.Root__nav-bar' });
     });
 
-    /* The whole top bar as one sheet.
+    /* No sheet behind the top bar.
      *
-     * Nothing paints the strip Spotify reserves for the window buttons, so the
-     * bare wallpaper showed through there while the rest of the bar sat on
-     * glass - a bright block at the right end with the account button on it.
-     * The bar spans the full width, so giving it a sheet covers the reserved
-     * strip too and the row reads as one piece. */
-    TARGETS.push({ selector: '#global-nav-bar', radius: 20, ca: true });
+     * It had one, to cover the strip Spotify reserves for the window buttons:
+     * nothing paints that, so bare wallpaper showed through it while the rest
+     * of the row sat on glass. But #global-nav-bar bleeds 8px past the grid on
+     * every side - margin -8, padding 8 - so its sheet ran flush to the window
+     * on three edges and straight into the main view on the fourth, while
+     * every other panel in the app keeps an 8px gap. One surface out of the
+     * whole layout ignoring the grid is worse than a strip with no glass on
+     * it, and the bar is not a panel: the controls in it are, and they carry
+     * their own. Their glass is what is left, which is what Liquify draws. */
 
     /* Controls the theme's list misses: the icons at the top right, and the
      * library header's collapse and create buttons. They sit in the same rows
