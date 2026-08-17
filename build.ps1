@@ -15,24 +15,33 @@ foreach ($f in @('color.ini', 'theme.js')) {
     Copy-Item (Join-Path $root $f) (Join-Path $dist $f)
 }
 
-$sb = [System.Text.StringBuilder]::new()
-[void]$sb.Append((Get-Content (Join-Path $root 'user.css') -Raw))
-
-$patches = Get-ChildItem (Join-Path $root 'patches') -Filter '*.css' -File | Sort-Object Name
-foreach ($p in $patches) {
-    [void]$sb.AppendLine()
-    [void]$sb.AppendLine("/* ===== fork patch: $($p.Name) ===== */")
-    [void]$sb.Append((Get-Content $p.FullName -Raw))
-    [void]$sb.AppendLine()
-    [void]$sb.AppendLine("/* ===== /fork patch: $($p.Name) ===== */")
-    Write-Host "  + $($p.Name)"
+function Build-UserCss($list) {
+    $sb = [System.Text.StringBuilder]::new()
+    [void]$sb.Append((Get-Content (Join-Path $root 'user.css') -Raw))
+    foreach ($p in $list) {
+        [void]$sb.AppendLine()
+        [void]$sb.AppendLine("/* ===== fork patch: $($p.Name) ===== */")
+        [void]$sb.Append((Get-Content $p.FullName -Raw))
+        [void]$sb.AppendLine()
+        [void]$sb.AppendLine("/* ===== /fork patch: $($p.Name) ===== */")
+    }
+    # UTF-8 without BOM, LF - spicetify reads this as-is.
+    return ($sb.ToString() -replace "`r`n", "`n")
 }
 
-# UTF-8 without BOM, LF - spicetify reads this as-is.
-$text = $sb.ToString() -replace "`r`n", "`n"
+# patches/local-*.css are personal tweaks for this machine: they belong in dist/,
+# which only ever reaches the local spicetify install, and not in theme/, which is
+# what the Marketplace hands to everybody else. They are gitignored to match.
+$patches = Get-ChildItem (Join-Path $root 'patches') -Filter '*.css' -File | Sort-Object Name
+$shared = @($patches | Where-Object { $_.Name -notlike 'local-*' })
+foreach ($p in $patches) {
+    Write-Host ("  + $($p.Name)" + $(if ($p.Name -like 'local-*') { ' (local only)' }))
+}
+
+$text = Build-UserCss $patches
 [System.IO.File]::WriteAllText((Join-Path $dist 'user.css'), $text, (New-Object System.Text.UTF8Encoding $false))
 
-Write-Host "built: $dist  ($($patches.Count) patch(es), $($text.Length) bytes user.css)"
+Write-Host "built: $dist  ($($patches.Count) patch(es), $($shared.Count) shared, $($text.Length) bytes user.css)"
 
 # theme/ is the distributable copy, and unlike dist/ it is committed: the
 # Marketplace installs a theme by reading files out of the repository, so what
@@ -40,9 +49,11 @@ Write-Host "built: $dist  ($($patches.Count) patch(es), $($text.Length) bytes us
 $theme = Join-Path $root 'theme'
 if (Test-Path $theme) { Remove-Item $theme -Recurse -Force }
 New-Item -ItemType Directory -Path $theme | Out-Null
-foreach ($f in @('user.css', 'color.ini', 'theme.js')) {
+foreach ($f in @('color.ini', 'theme.js')) {
     Copy-Item (Join-Path $dist $f) (Join-Path $theme $f)
 }
+[System.IO.File]::WriteAllText((Join-Path $theme 'user.css'), (Build-UserCss $shared),
+    (New-Object System.Text.UTF8Encoding $false))
 # Our own screenshot, not upstream's. preview.png at the root is Liquify's and
 # shows Liquify; shipping it under this theme's name would be both a
 # misrepresentation and a redistribution of someone else's screenshot.
