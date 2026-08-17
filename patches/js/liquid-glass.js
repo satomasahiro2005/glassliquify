@@ -1088,11 +1088,17 @@
 
   var FLOAT_ATTR = 'data-liquify-lg-float';
 
+  /* Everything applyFloat writes as a property, in one list, because taking a
+   * float back off is done from two places and a leftover --lg-lens leaves the
+   * layer refracting through a filter that is no longer sized for it. */
+  var FLOAT_VARS = ['--lg-ring', '--lg-rim', '--lg-rim-floor', '--lg-angle',
+                    '--lg-lens', '--lg-clip'];
+
   function clearFloat(el) {
     if (!el.hasAttribute(FLOAT_ATTR)) return;
     el.removeAttribute(FLOAT_ATTR);
     el.__lgFloat = null;
-    ['--lg-ring', '--lg-rim', '--lg-rim-floor', '--lg-angle'].forEach(function (p) {
+    FLOAT_VARS.forEach(function (p) {
       el.style.removeProperty(p);
     });
     el.style.removeProperty('backdrop-filter');
@@ -1109,6 +1115,29 @@
       try { els = document.querySelectorAll(FLOATERS[i]); } catch (e) { continue; }
       for (var j = 0; j < els.length; j++) applyFloat(els[j]);
     }
+  }
+
+  /* An absolutely positioned layer needs a positioned ancestor, and making the
+   * element itself that ancestor walks back into the same trap: everything
+   * absolute inside it - the flyouts - starts being laid out against it, and
+   * its overflow cuts them. So look for something above that already occupies
+   * exactly the same box. tippy wraps every popup in one, which covers the
+   * menus; where there is nothing the element takes the job, and for those
+   * there is no flyout to lose.
+   *
+   * Layout offsets, not painted rects, for the same reason applyFloat measures
+   * offsetWidth: a menu animates in scaled, so its rect and its wrapper's
+   * disagree for as long as that lasts, and a submenu measured mid-animation
+   * came back with no anchor and took the fallback for good. offsetParent is
+   * the box inset:0 resolves against, and offsetLeft/Top are what the element
+   * sits at inside it, both free of the transform. */
+  function coincidentAnchor(el) {
+    var host = el.offsetParent;
+    if (!host || host === document.body || host === document.documentElement) return null;
+    if (el.offsetLeft !== 0 || el.offsetTop !== 0) return null;
+    if (Math.abs(host.offsetWidth - el.offsetWidth) > 1 ||
+        Math.abs(host.offsetHeight - el.offsetHeight) > 1) return null;
+    return host;
   }
 
   function applyFloat(el) {
@@ -1132,16 +1161,29 @@
     var ring = Math.max(1, DEFAULTS.hlWidth);
     var key = (r.width | 0) + 'x' + (r.height | 0) + 'r' + radius.toFixed(1) +
               'n' + n + 'w' + ring + 's' + DEFAULTS.saturation;
-    if (el.__lgFloat === key && el.style.clipPath) return;
+    if (el.__lgFloat === key && el.style.getPropertyValue('--lg-clip')) return;
     el.__lgFloat = key;
 
     remember(el);
     el.setAttribute(FLOAT_ATTR, '');
-    if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
+    /* The lens and the squircle go on the ::before layer, never on the element.
+     *
+     * Both of them cut things out of it. clip-path clips every descendant, and
+     * backdrop-filter makes the element the containing block for absolutely
+     * positioned ones, so the menu's own overflow:auto then clips those too.
+     * A context menu's submenu is a descendant - Spotify hangs it inside the
+     * item it belongs to - and it opens beside the menu, entirely outside its
+     * box. With either of those on the element the submenu is laid out, drawn
+     * for the frame before it is placed, and cut away: it flashes as the
+     * highlight moves onto the item and there is nothing there after that.
+     *
+     * A pseudo-element clips only itself, and the element goes back to being
+     * the plain box Spotify built. */
+    var host = coincidentAnchor(el);
+    if (!host && getComputedStyle(el).position === 'static') el.style.position = 'relative';
     var id = lensFilter(r.width, r.height, radius);
-    el.style.setProperty('backdrop-filter', 'url(#' + id + ')', 'important');
-    el.style.setProperty('-webkit-backdrop-filter', 'url(#' + id + ')', 'important');
-    el.style.setProperty('clip-path', squirclePath(r.width, r.height, radius, n, 32));
+    el.style.setProperty('--lg-lens', 'url(#' + id + ')');
+    el.style.setProperty('--lg-clip', squirclePath(r.width, r.height, radius, n, 32));
     el.style.setProperty('--lg-ring', superRingPath(r.width, r.height, radius, n, ring, 32));
     el.style.setProperty('--lg-rim', String(DEFAULTS.hlAlpha));
     el.style.setProperty('--lg-rim-floor', String(DEFAULTS.hlFloor * DEFAULTS.hlAlpha));
@@ -1299,13 +1341,38 @@
        * where the edge faces the light, never below the floor, so the frame is
        * continuous the whole way round. */
       '[data-liquify-lg-float]{border-radius:0!important;box-shadow:none!important;' +
-      'border-color:transparent!important;}' +
-      /* plus-lighter, because the shader adds the rim rather than laying it
-       * over: alpha-blended white on a dark card reads as grey paint, and that
-       * is why the overlay's edge did not look like the panels'. */
+      'border-color:transparent!important;' +
+      /* Nothing on the element itself. A backdrop-filter here would make it the
+       * containing block for the flyouts it holds and its overflow would clip
+       * them - see applyFloat. The glass is on the layer below. */
+      'backdrop-filter:none!important;-webkit-backdrop-filter:none!important;}' +
+      /* The layer, and the lens is the whole of it.
+       *
+       * The theme paints its own before-layer on some of these - a context menu
+       * gets blur(5px) brightness(0.7) on top of whatever --liquify-filter is -
+       * and letting that stand made menus darker and softer than the cards
+       * beside them, which have no such rule and are the same material. One
+       * lens for every floater, so they match. */
+      '[data-liquify-lg-float]::before{content:"";position:absolute;inset:0;' +
+      'pointer-events:none;z-index:-1;clip-path:var(--lg-clip);' +
+      'backdrop-filter:var(--lg-lens)!important;' +
+      '-webkit-backdrop-filter:var(--lg-lens)!important;}' +
+      /* The rim was drawn with plus-lighter, because the shader adds its rim
+       * rather than laying it over and alpha-blended white on a dark card
+       * reads as grey paint. It cannot be: a blending child makes its parent
+       * an isolated group, and an isolated group is a backdrop root - every
+       * backdrop-filter inside it then has nothing behind it to filter and
+       * paints nothing at all. That took the glass off the layer above, and
+       * off any popup nested inside a floater as well, because the isolation
+       * covers the whole subtree. Measured with the rim's blend mode as the
+       * only thing changed: without it the menu frosts, with it the same menu
+       * is clear glass with text on it.
+       *
+       * So the rim is laid over now. What is lost is the top of its range,
+       * where adding would have gone past white; the gradient across it is
+       * the same. */
       '[data-liquify-lg-float]::after{content:"";position:absolute;inset:0;' +
       'pointer-events:none;z-index:2;clip-path:var(--lg-ring);' +
-      'mix-blend-mode:plus-lighter;' +
       'background:linear-gradient(var(--lg-angle),' +
       'rgba(255,255,255,var(--lg-rim)) 0%,' +
       'rgba(255,255,255,var(--lg-rim-floor)) 50%,' +
@@ -1415,7 +1482,7 @@
       document.querySelectorAll('[' + FLOAT_ATTR + ']').forEach(function (el) {
         el.removeAttribute(FLOAT_ATTR);
         el.__lgFloat = null;
-        ['--lg-ring', '--lg-rim', '--lg-rim-floor', '--lg-angle'].forEach(function (p) {
+        FLOAT_VARS.forEach(function (p) {
           el.style.removeProperty(p);
         });
         restore(el);
